@@ -8,6 +8,8 @@ const redis = new Redis({
 
 
 const Orders:Record<string,any> = {}
+const latest:Record<string,{asset:string,price:Number,decimal:number}> = {}
+
 
 //@ts-ignore
 const redis1 = new Redis({
@@ -15,10 +17,24 @@ const redis1 = new Redis({
     port:6380
 })
 
+//@ts-ignore
+const redis2  = new Redis({
+    host:"127.0.0.1",
+    port:6380
+})
+
+
+redis2.subscribe("trades");
+//@ts-ignore
+redis2.on("message",async(channel,data)=>{
+    console.log(data)
+})
+
 
 async function engine(){
     while(true){
         const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'placeorder', '$');
+        
         if(!stream){
             continue;
         }
@@ -33,5 +49,4 @@ async function engine(){
         }
     }
 }
-
 engine()
