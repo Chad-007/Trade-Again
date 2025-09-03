@@ -1,11 +1,28 @@
 import express  = require("express")
 import jwt = require("jsonwebtoken")
+const { Pool } = require("pg")
+import bycrypt  = require("bcrypt")
+import Redis = require("ioredis")
 const app = express()
 app.use(express.json())
-import Pool  = require("pg")
-import bycrypt  = require("bcrypt")
-import mongoose = require("mongoose")
 
+
+
+//@ts-ignore
+const redis = new Redis({
+    host:"127.0.0.1",
+    port:6380
+})
+
+
+//@ts-ignore
+const redis1 = new Redis({
+    host:"127.0.0.1",
+    port:6380
+})
+
+
+redis1.subscribe("placed")
 //@ts-ignore
 const pool = new Pool({
   host: "127.0.0.1",
@@ -24,7 +41,7 @@ function auth(req:any,res:any,next:any){
     next();
 }
 
-app.post("/signup",async(req,res)=>{
+app.post("/api/v1/signup",async(req,res)=>{
     const{username,password} = req.body
     try{
         const hashed = await bycrypt.hash(password,10);
@@ -39,7 +56,7 @@ app.post("/signup",async(req,res)=>{
     }
 });
 
-app.post("/signin",async(req,res)=>{
+app.post("/api/v1/signin",async(req,res)=>{
     const{username,password}  = req.body
     try{
         const rows  = await pool.query("SELECT * from users where username = $1",username);
@@ -55,6 +72,43 @@ app.post("/signin",async(req,res)=>{
     }
 });
 
-// app.post("/placeorder",async(req,res)=>{
-//     const {}
-// })
+app.post("/api1/v1/trade/create",async(req:any,res:any)=>{
+    // const {asset,type,margin,leverage,slippage} = req.body
+    try{
+        await redis.xadd("placeorder","*","data",JSON.stringify(req.body))
+        //@ts-ignore
+        redis1.on("message",(channel,message)=>{
+        return res.status(200).json(message)
+    })
+    }catch(err){
+        return res.status(401).json({message:"there was some issue"})
+    }
+})
+
+
+
+
+
+app.post("/api1/v1/trade/close",async(req:any,res:any)=>{
+    const user = req.user;
+    
+})
+
+app.get("/api1/v1/balance/usd",async(req:any,res:any)=>{
+    const user = req.user;
+    
+})
+
+app.get("/api1/v1/balance/",async(req:any,res:any)=>{
+    const user = req.user;
+    
+})
+
+app.get("/api1/v1/suppotedAssets/",async(req:any,res:any)=>{
+    const user = req.user;
+    
+})
+
+app.listen(3000,()=>{
+    console.log("im listening")
+})
