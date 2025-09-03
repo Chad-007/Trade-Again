@@ -4,14 +4,12 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "lint": "turbo run lint"
   },
   "devDependencies": {
-    "prettier": "^3.6.2",
+    "@types/express": "^5.0.3",
     "turbo": "^2.5.6",
-    "typescript": "5.9.2"
+    "typescript": "^5.9.2"
   },
   "engines": {
     "node": ">=18"
@@ -20,5 +18,16 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/pg": "^8.15.5",
+    "@types/typescript": "^2.0.0",
+    "bcrypt": "^6.0.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.18.0",
+    "pg": "^8.16.3"
+  }
 }
