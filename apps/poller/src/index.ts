@@ -7,17 +7,14 @@ const redis = new Redis({
     port:6380
 })
 
-
 const ws = new WebSocket("wss://ws.backpack.exchange/")
 const latest:Record<string,{asset:string,price:Number,decimal:number}> = {}
-
 
 ws.on("open",()=>{
     ws.send(JSON.stringify({method:"SUBSCRIBE",params:["trade.SOL_USDC"]}))
     ws.send(JSON.stringify({method:"SUBSCRIBE",params:["trade.BTC_USDC"]}))
     ws.send(JSON.stringify({method:"SUBSCRIBE",params:["trade.ETH_USDC"]}))
 })
-
 
 ws.on("message",async(trade)=>{
     const what = JSON.parse(trade.toString())
@@ -30,7 +27,6 @@ ws.on("message",async(trade)=>{
         }
     }
 })
-
 
 setInterval(()=>{
     const updates = Object.values(latest);

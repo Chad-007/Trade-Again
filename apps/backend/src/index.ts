@@ -77,14 +77,13 @@ app.post("/api1/v1/trade/create",async(req:any,res:any)=>{
     try{
         await redis.xadd("placeorder","*","data",JSON.stringify(req.body))
         //@ts-ignore
-        redis1.on("message",(channel,message)=>{
+        redis1.once("message",(channel,message)=>{
         return res.status(200).json(message)
     })
     }catch(err){
         return res.status(401).json({message:"there was some issue"})
     }
 })
-
 
 
 
