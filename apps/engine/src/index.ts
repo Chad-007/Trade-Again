@@ -1,12 +1,19 @@
 import Redis = require("ioredis");
-import parse = require("uuid");
 import uuid = require("uuid")
-
+const { Pool } = require("pg")
 //@ts-ignore
 const redis = new Redis({
     host:"127.0.0.1",
     port:6380
 })
+
+const pool = new Pool({
+  host: "127.0.0.1",
+  port: 5432,
+  user: "postgres",
+  password: "alan",
+  database: "postgres"
+});
 
 const Orders:Record<string,any> = {}
 const latest:Record<string,{asset:string,price:Number,decimal:number}> = {}
@@ -68,7 +75,6 @@ function waitForPrice(asset: string): Promise<any> {
 }
 
 
-
 async function engine(){
     while(true){
         const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'placeorder', '$');
@@ -104,28 +110,30 @@ async function engine(){
             };
             Orders[orderid] = position
             console.log("after :))",Orders)
+            await redis3.hset("prices", orderid, JSON.stringify(latest));
             await redis3.hset("open_orders", orderid, JSON.stringify(position));
             await redis1.publish("placed",JSON.stringify("hey"))
         }
     }
 }
 
+
 async function closeengine(){
     while(true){
         const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'closeorder', '$');
         if (!stream) continue;
-
         const [name, message] = stream[0] as any;
         for(const[id,data] of message){
             const [order,rawdata] = data;
             const raw = JSON.parse(rawdata);
             const orderid = raw.orderId;
+            const userid = raw.userId
+            
             const anyorder = await redis3.hget("open_orders", orderid);
             if (!anyorder) {
                 console.error("Order not found in open_orders:", orderid);
                 continue;
             }
-
             const currorder = JSON.parse(anyorder);
             const market = latest[currorder.asset] || await waitForPrice(currorder.asset);
             const exitprice = market.price;
@@ -140,14 +148,13 @@ async function closeengine(){
                 pnl,
                 closedAt: new Date().toISOString(),
             };
-
             await redis3.hdel("open_orders", orderid);
             await redis1.publish("placed", JSON.stringify({ status: "closed", orderid: orderid }));
+            await pool.query("insert into orders(id,userid,asset,side,margin,leverage,entryprice,exitprice,pnl,size,closed_at)values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11",[orderid,userid,closedOrder.asset,closedOrder.side,closedOrder.margin,closedOrder.leverage,closedOrder.entryprice,closedOrder.exitprice,closedOrder.pnl,closedOrder.size,closedOrder.closed_at])
             console.log("closed order:", closedOrder);
         }
     }   
 }
-
 
 
 engine()
