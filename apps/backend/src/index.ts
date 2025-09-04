@@ -88,7 +88,7 @@ app.post("/api1/v1/trade/create",async(req:any,res:any)=>{
 
 
 app.post("/api1/v1/trade/close",async(req:any,res:any)=>{
-    const orderid  = req.boy;
+    // const orderId  = req.boy;
     try{
         await redis.xadd("closeorder","*","orderid",JSON.stringify(req.body))
         //@ts-ignore
