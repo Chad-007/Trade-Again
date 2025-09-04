@@ -29,6 +29,15 @@ const redis2  = new Redis({
     port:6380
 })
 
+
+//@ts-ignore
+const redis4 = new Redis({
+    host:"127.0.0.1",
+    port:6380
+})
+
+
+
 redis2.subscribe("trades");
 //@ts-ignore
 redis2.on("message",async(channel,data)=>{
@@ -80,7 +89,7 @@ async function engine(){
             console.log("before :))",Orders)
             const market = latest[raw.asset] || await waitForPrice(raw.asset);
             const price = market.price
-            const pos = raw.margin*raw.leverage
+            const pos = market/raw.margin
             const position = {
                 id: orderid,
                 asset: raw.asset,
@@ -133,8 +142,8 @@ async function closeengine(){
             };
 
             await redis3.hdel("open_orders", orderid);
-            await redis1.publish("placed", JSON.stringify({ status: "closed", order: closedOrder }));
-            console.log("Closed order:", closedOrder);
+            await redis1.publish("placed", JSON.stringify({ status: "closed", orderid: orderid }));
+            console.log("closed order:", closedOrder);
         }
     }   
 }

@@ -22,6 +22,13 @@ const redis1 = new Redis({
 })
 
 
+//@ts-ignore
+const redis2 = new Redis({
+    host:"127.0.0.1",
+    port:6380
+})
+
+
 redis1.subscribe("placed")
 //@ts-ignore
 const pool = new Pool({
@@ -34,7 +41,7 @@ const pool = new Pool({
 
 
 function auth(req:any,res:any,next:any){
-    const authheader = req.headers("Authorization")
+    const authheader = req.headers("authorization")
     const token  =  authheader.split(" ")[1];
     const decoded  = jwt.verify(token,"secretkey") as {id:number,username:string}
     req.user = decoded
@@ -47,7 +54,7 @@ app.post("/api/v1/signup",async(req,res)=>{
         const hashed = await bycrypt.hash(password,10);
         const hey = await pool.query("SELECT * from users where username = $1",[username]);
         if(hey.rows.length===0){
-                await pool.query("insert into users(username,password,balance)values($1,$2)",[username,hashed,10000])
+                await pool.query("insert into users(username,password,balance)values($1,$2,$3)",[username,hashed,10000])
         }
         return res.status(200).json({message:"signed up successfully"})
     }
@@ -74,11 +81,19 @@ app.post("/api/v1/signin",async(req,res)=>{
 
 app.post("/api1/v1/trade/create",async(req:any,res:any)=>{
     try{
-        await redis.xadd("placeorder","*","data",JSON.stringify(req.body))
-        //@ts-ignore
-        redis1.once("message",(channel,message)=>{
-        return res.status(200).json(message)
-    })
+        const orderData = {
+            ...req.body,
+            userId:req.user.id
+        }
+await redis.xadd("placeorder","*","data",JSON.stringify(orderData))
+//@ts-ignore
+redis1.once("message",(channel,message)=>{
+    return res.status(200).json(message)
+})
+
+setTimeout(() => {
+    res.status(408).json({ message: "there was some  issue while processing the order" })
+}, 10000)
     }catch(err){
         return res.status(401).json({message:"there was some issue"})
     }
@@ -90,25 +105,45 @@ app.post("/api1/v1/trade/create",async(req:any,res:any)=>{
 app.post("/api1/v1/trade/close",async(req:any,res:any)=>{
     // const orderId  = req.boy;
     try{
-        await redis.xadd("closeorder","*","orderid",JSON.stringify(req.body))
+
+        const closeData = {
+            orderId:req.body.orderId,
+            userId:req.user.id
+        }
+        await redis.xadd("closeorder","*","orderid",JSON.stringify(closeData))
         //@ts-ignore
         redis1.once("message", (channel, message) => {
                 return res.status(200).json(JSON.parse(message));
             });
+            setTimeout(() => {
+                        res.status(408).json({ message: "there was some  issue while processing you close order request" })
+            }, 10000)
     }catch(err){
         return res.status(401).json({message:"there was some issue"})
     }    
 });
 
-app.get("/api1/v1/balance/usd",async(req:any,res:any)=>{
+app.get("/api1/v1/balance",async(req:any,res:any)=>{
     const user = req.user;
-    
+
+     
 });
 
-app.get("/api1/v1/balance/",async(req:any,res:any)=>{
-    const user = req.user;
-    
+app.get("/api1/v1/balance/usd",async(req:any,res:any)=>{
+    try {
+        const user = req.user;
+        const result = await pool.query("SELECT balance FROM users WHERE id = $1", [user.id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "user not found" })
+        }
+        return res.json({ balance: result.rows[0].balance })
+    } catch (err) {
+        console.error(err)
+        return res.status(500).json({ message: "there was some issue while fetching the balance" })
+    }
 });
+
 
 app.get("/api1/v1/suppotedAssets/",async(req:any,res:any)=>{
     const user = req.user;
