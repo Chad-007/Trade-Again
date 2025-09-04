@@ -73,7 +73,6 @@ app.post("/api/v1/signin",async(req,res)=>{
 });
 
 app.post("/api1/v1/trade/create",async(req:any,res:any)=>{
-    // const {asset,type,margin,leverage,slippage} = req.body
     try{
         await redis.xadd("placeorder","*","data",JSON.stringify(req.body))
         //@ts-ignore
@@ -89,25 +88,33 @@ app.post("/api1/v1/trade/create",async(req:any,res:any)=>{
 
 
 app.post("/api1/v1/trade/close",async(req:any,res:any)=>{
-    const user = req.user;
-    
-})
+    const orderid  = req.boy;
+    try{
+        await redis.xadd("closeorder","*","orderid",JSON.stringify(req.body))
+        //@ts-ignore
+        redis1.once("message", (channel, message) => {
+                return res.status(200).json(JSON.parse(message));
+            });
+    }catch(err){
+        return res.status(401).json({message:"there was some issue"})
+    }    
+});
 
 app.get("/api1/v1/balance/usd",async(req:any,res:any)=>{
     const user = req.user;
     
-})
+});
 
 app.get("/api1/v1/balance/",async(req:any,res:any)=>{
     const user = req.user;
     
-})
+});
 
 app.get("/api1/v1/suppotedAssets/",async(req:any,res:any)=>{
     const user = req.user;
     
-})
+});
 
 app.listen(3000,()=>{
     console.log("im listening")
-})
+});

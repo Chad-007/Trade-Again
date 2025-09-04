@@ -7,11 +7,8 @@ const redis = new Redis({
     port:6380
 })
 
-
 const Orders:Record<string,any> = {}
 const latest:Record<string,{asset:string,price:Number,decimal:number}> = {}
-
-
 
 //@ts-ignore
 const redis3 = new Redis({
@@ -31,7 +28,6 @@ const redis2  = new Redis({
     port:6380
 })
 
-
 redis2.subscribe("trades");
 //@ts-ignore
 redis2.on("message",async(channel,data)=>{
@@ -48,13 +44,6 @@ redis2.on("message",async(channel,data)=>{
 });
 
 
-// async function  poller() {
-//     //@ts-ignore
-//     await redis2.once("message",async(message,data)=>{
-//             console.log(data)
-//         })
-// }
-
 
 function waitForPrice(asset: string): Promise<any> {
     return new Promise((resolve) => {
@@ -69,6 +58,7 @@ function waitForPrice(asset: string): Promise<any> {
 }
 
 
+
 async function engine(){
     while(true){
         const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'placeorder', '$');
@@ -76,6 +66,10 @@ async function engine(){
         if(!stream){
             continue;
         }
+        const Orders = await redis3.hgetall("open_orders");
+            for (const [id, data] of Object.entries(Orders)) {
+                Orders[id] = JSON.parse(data as string);
+            }
         const [name,message] = stream[0] as any;
         for(const[id,data] of  message){
             const [order,rawdata] = data;
@@ -83,10 +77,8 @@ async function engine(){
             const orderid  = uuid.v4()
             Orders[orderid] = raw
             console.log("before :))",Orders)
-            // const market = raw.asset
             const market = latest[raw.asset] || await waitForPrice(raw.asset);
             const price = market.price
-            const slippage = raw.slippage
             const pos = raw.margin*raw.leverage
             const position = {
                 id: orderid,
@@ -102,12 +94,32 @@ async function engine(){
             };
             Orders[orderid] = position
             console.log("after :))",Orders)
-
+            await redis3.hset("open_orders", orderid, JSON.stringify(position));
             await redis1.publish("placed",JSON.stringify("hey"))
         }
     }
 }
 
 
+async function closeengine(){
+    while(true){
+        const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'closeorder', '$');
+        if (!stream) continue;
+        console.log("it shouldnt happen")
+        const [name, message] = stream[0] as any;
+        for(const[id,data] of  message){
+            const [order,rawdata] = data;
+            const raw = JSON.parse(rawdata);
+            const orderid = raw.orderId
+            console.log(orderid)
+            const anyorder = Orders[orderid]
+            await redis1.publish("placed",JSON.stringify("closed"))
+        }
+    }   
+}
+
+
 engine()
-// poller()
+closeengine()
+
+
