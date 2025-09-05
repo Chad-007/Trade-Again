@@ -100,6 +100,7 @@ async function getbalance(){
     const rawdata = field[1];
     const raw = JSON.parse(rawdata)
     console.log("id is",raw.userid,"balance is",raw.balance)
+    balance = raw.backend
   }
 }
 
@@ -158,16 +159,21 @@ async function engine() {
               ? price * (1 - 1 / raw.leverage)
               : price * (1 + 1 / raw.leverage),
         };
-        balance -= raw.margin*raw.leverage;
-        Orders[orderid] = position;
-        console.log("Created position:", Orders[orderid])
-        //snapshot  at a spot rather than one by one
-        await redis3.multi().hset("prices", raw.asset, JSON.stringify({
-                asset: market.asset,
-                price: market.price,
-                decimal: market.decimal,
-                })).hset("open_orders", orderid, JSON.stringify(position)).exec();
-        await redis1.publish("placed", JSON.stringify(orderid));
+        if(balance>raw.margin){
+          balance -= raw.margin*raw.leverage;
+          Orders[orderid] = position;
+          console.log("created position:", Orders[orderid])
+          //snapshot  at a spot rather than one by one
+          await redis3.multi().hset("prices", raw.asset, JSON.stringify({
+                  asset: market.asset,
+                  price: market.price,
+                  decimal: market.decimal,
+                  })).hset("open_orders", orderid, JSON.stringify(position)).exec();
+          await redis1.publish("placed", JSON.stringify(orderid));
+        }
+        else{
+            await redis1.publish("not placed", JSON.stringify(orderid));
+        }
       } catch (err) {
         console.error("processing error:", err);
       } finally {
@@ -207,7 +213,7 @@ async function closeengine() {
           pnl,
           closedAt: new Date().toISOString(),
         };
-        balance +=pnl
+        balance += pnl
         console.log("the you this much money left brotha",balance)
         await redis3.hdel("open_orders", orderid);
         await redis1.publish("placed", JSON.stringify({ status: "closed", orderid }));
