@@ -31,8 +31,20 @@ const redis3 = new Redis({
 
 //@ts-ignore
 const redis4 = new Redis({
-  host:"127.0.0.1",
-  port:6380
+    host:"127.0.0.1",
+    port:6380
+})
+
+//@ts-ignore
+const redis5 = new Redis({
+    host:"127.0.0.1",
+    port:6380
+})
+
+//@ts-ignore
+const redis6 = new Redis({
+    host:"127.0.0.1",
+    port:6380
 })
 
 //@ts-ignore
@@ -59,7 +71,6 @@ redis2.on("message", async (channel, data) => {
       decimal: update.decimal,
     };
   }
-  // console.log(latest)
 });
 
 function waitForPrice(asset: string): Promise<any> {
@@ -76,7 +87,7 @@ function waitForPrice(asset: string): Promise<any> {
 
 async function getbalance(){
   while (true) {
-    const stream = await redis.xread(
+    const stream = await redis4.xread(
       "BLOCK",
       0,
       "STREAMS",
@@ -111,10 +122,10 @@ async function restoreorders() {
 // }
 
 async function engine() {
-  let lastId = (await redis3.get("placeorder:last_id")) || "0";
+  let lastId = "$";
 
   while (true) {
-    const stream = await redis.xread(
+    const stream = await redis5.xread(
       "BLOCK",
       0,
       "STREAMS",
@@ -122,13 +133,14 @@ async function engine() {
       lastId
     );
     if (!stream) continue;
-
     const [name, messages] = stream[0] as any;
 
     for (const [id, fields] of messages) {
       try {
+        console.log("Processing message:", id, fields);
         const rawdata = fields[1];
         const raw = JSON.parse(rawdata);
+        console.log("Parsed order data:", raw);
         const orderid = uuid.v4();
         // wait if not price is there mostly wont be needed
         const market = latest[raw.asset] || (await waitForPrice(raw.asset));
@@ -148,6 +160,7 @@ async function engine() {
         };
         balance -= raw.margin*raw.leverage;
         Orders[orderid] = position;
+        console.log("Created position:", Orders[orderid])
         //snapshot  at a spot rather than one by one
         await redis3.multi().hset("prices", raw.asset, JSON.stringify({
                 asset: market.asset,
@@ -168,7 +181,7 @@ async function closeengine() {
   // to prevent reprocessing  ie give me all the messages after lastid
   let lastId = (await redis3.get("closeorder:last_id")) || "0";
   while (true) {
-    const stream = await redis.xread("BLOCK", 0, "STREAMS", "closeorder", lastId);
+    const stream = await redis6.xread("BLOCK", 0, "STREAMS", "closeorder", lastId);
     if (!stream) continue;
     const [name, messages] = stream[0] as any;
     for (const [id, fields] of messages) {
@@ -231,7 +244,6 @@ async function closeengine() {
 async function bootstrap() {
   getbalance();
   await restoreorders();
-  // await restoreprices();
   engine();
   closeengine();
 }
