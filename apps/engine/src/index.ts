@@ -37,14 +37,6 @@ const redis2  = new Redis({
 })
 
 
-//@ts-ignore
-const redis4 = new Redis({
-    host:"127.0.0.1",
-    port:6380
-})
-
-
-
 redis2.subscribe("trades");
 //@ts-ignore
 redis2.on("message",async(channel,data)=>{
@@ -57,7 +49,8 @@ redis2.on("message",async(channel,data)=>{
             decimal:update.decimal
         }
     }
-    console.log(latest)
+    // console.log(latest)
+
 });
 
 
@@ -74,15 +67,31 @@ function waitForPrice(asset: string): Promise<any> {
     });
 }
 
+async function restoreorders() {
+  const all = await redis3.hgetall("open_orders");
+  for (const [id, data] of Object.entries(all)) {
+    Orders[id] = JSON.parse(data as string);
+  }
+  console.log("restored open orders:", Object.keys(Orders).length);
+}
+
+async function restoreprices() {
+  const all = await redis3.hgetall("prices");
+  for (const [id, data] of Object.entries(all)) {
+    latest[id] = JSON.parse(data as string);
+  }
+  console.log("restored prices:", Object.keys(latest).length);
+}
+
 
 async function engine(){
+    let lastId = (await redis3.get("placeorder:last_id")) || "0";
     while(true){
-        const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'placeorder', '$');
+        const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'placeorder', lastId);
         //@ts-ignore
         if(!stream){
             continue;
         }
-        const Orders = await redis3.hgetall("open_orders");
             for (const [id, data] of Object.entries(Orders)) {
                 Orders[id] = JSON.parse(data as string);
             }
@@ -103,15 +112,15 @@ async function engine(){
                 entryprice: price,
                 margin: raw.margin,
                 leverage: raw.leverage,
-                size: pos,
+                size: (raw.margin*raw.leverage)/price,
                 liquidationPrice: raw.type === "long"
-                    ? price - (raw.margin / pos) * price
-                    : price + (raw.margin / pos) * price
+                    ? price * (1 - (1 / raw.leverage))
+                    : price * (1 + (1 / raw.leverage))
             };
             Orders[orderid] = position
             console.log("after :))",Orders)
             // use a redis cache for snapshotting
-            await redis3.hset("prices", orderid, JSON.stringify(latest));
+            await redis3.hset("prices", raw.asset, JSON.stringify(latest));
             // use a redis cache for snapshotting
             await redis3.hset("open_orders", orderid, JSON.stringify(position));
             await redis1.publish("placed",JSON.stringify(orderid))
@@ -121,8 +130,9 @@ async function engine(){
 
 
 async function closeengine(){
+    let lastId = (await redis3.get("closeorder:last_id")) || "0";
     while(true){
-        const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'closeorder', '$');
+        const stream = await redis.xread('BLOCK', 0, 'STREAMS', 'closeorder', lastId);
         if (!stream) continue;
         const [name, message] = stream[0] as any;
         for(const[id,data] of message){
@@ -130,7 +140,6 @@ async function closeengine(){
             const raw = JSON.parse(rawdata);
             const orderid = raw.orderId;
             const userid = raw.userId
-            
             const anyorder = await redis3.hget("open_orders", orderid);
             if (!anyorder) {
                 console.error("Order not found in open_orders:", orderid);
@@ -152,14 +161,34 @@ async function closeengine(){
             };
             await redis3.hdel("open_orders", orderid);
             await redis1.publish("placed", JSON.stringify({ status: "closed", orderid: orderid }));
-            await pool.query("insert into orders(id,userid,asset,side,margin,leverage,entryprice,exitprice,pnl,size,closed_at)values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11",[orderid,userid,closedOrder.asset,closedOrder.side,closedOrder.margin,closedOrder.leverage,closedOrder.entryprice,closedOrder.exitprice,closedOrder.pnl,closedOrder.size,closedOrder.closed_at])
+            await pool.query(
+            `INSERT INTO closed_orders
+            (id, userid, asset, side, margin, leverage, entryprice, exitprice, pnl, order_size, closed_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [
+                orderid,
+                userid,
+                closedOrder.asset,
+                closedOrder.side,
+                closedOrder.margin,
+                closedOrder.leverage,
+                closedOrder.entryprice,
+                closedOrder.exitprice,
+                closedOrder.pnl,
+                closedOrder.size,   
+                closedOrder.closedAt
+            ]
+            );
             console.log("closed order:", closedOrder);
         }
     }   
 }
 
+async function bootstrap() {
+  await restoreorders();
+  await restoreprices();
+  engine();
+  closeengine();
+}
 
-engine()
-closeengine()
-
-
+bootstrap();

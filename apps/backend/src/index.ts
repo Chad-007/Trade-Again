@@ -129,24 +129,34 @@ setTimeout(() => {
 
 
 
-app.post("/api1/v1/trade/close",async(req:any,res:any)=>{
-    try{
-        const closeData = {
-            orderId:req.body.orderId,
-            userId:1
-        }
-        await redis.xadd("closeorder","*","orderid",JSON.stringify(closeData))
-        //@ts-ignore
-        redis1.once("message", (channel, message) => {
-                return res.status(200).json(JSON.parse(message));
-            });
-            setTimeout(() => {
-                        res.status(408).json({ message: "there was some  issue while processing you close order request" })
-            }, 10000)
-    }catch(err){
-        return res.status(401).json({message:"there was some issue"})
-    }    
+app.post("/api1/v1/trade/close", async (req: any, res: any) => {
+  try {
+    const closeData = {
+      orderId: req.body.orderId,
+      userId: 1
+    };
+
+    await redis.xadd("closeorder", "*", "orderid", JSON.stringify(closeData));
+    const timeout = setTimeout(() => {
+      if (!res.headersSent) {
+        res.status(408).json({ message: "timeout issue" });
+      }
+    }, 10000);
+    //@ts-ignore
+    redis1.once("message", (channel, message) => {
+      if (!res.headersSent) {
+        clearTimeout(timeout); 
+        res.status(200).json(JSON.parse(message));
+      }
+    });
+
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(401).json({ message: "there was some issue" });
+    }
+  }
 });
+
 
 app.get("/api1/v1/balance/usd",async(req:any,res:any)=>{
     try {

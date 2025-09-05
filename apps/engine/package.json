@@ -8,5 +8,10 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@types/pg": "^8.15.5",
+    "@types/uuid": "^10.0.0",
+    "dotenv": "^17.2.2"
+  }
 }
