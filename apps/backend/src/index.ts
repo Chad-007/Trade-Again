@@ -39,34 +39,28 @@ const pool = new Pool({
   database: "postgres"
 });
 
-
-function auth(req:any,res:any,next:any){
-    const authheader = req.headers["authorization"];
-    const token  =  authheader.split(" ")[1];
-    const decoded  = jwt.verify(token,"secretkey") as {id:number,username:string}
-    req.user = decoded
-    next();
-}
-
-
-
 app.post("/api/v1/signup",async(req,res)=>{
     const{username,password} = req.body
     try{
         const hashed = await bcrypt.hash(password,10);
         const hey = await pool.query("SELECT * from users where username = $1",[username]);
         if(hey.rows.length===0){
-                await pool.query("insert into users(username,password,balance)values($1,$2,$3)",[username,hashed,10000])
+            const result =  await pool.query("insert into users(username,password,balance)values($1,$2,$3) returning id,balance",[username,hashed,100000000])
+            const userid = result.rows[0].id;
+            const balance  = result.rows[0].balance
+            const token = jwt.sign({userid,balance},"secretkey",{expiresIn:"1h"})
+            const magiclink = `http://localhost:3000/api/v1/magic/${token}`;
+            return res.status(200).json({message:"signed up successfully",magiclink,"userid":userid})
         }
-        return res.status(200).json({message:"signed up successfully"})
+        else{
+          return res.json({message:"user already exists try logging in"})
+        }
     }
     catch(err){
         console.error("Signup error:", err)
         return res.status(401).json({message:"there was some issue"})
     }
 });
-
-
 
 app.post("/api/v1/signin", async (req, res) => {
   const { username, password } = req.body
@@ -75,7 +69,6 @@ app.post("/api/v1/signin", async (req, res) => {
       "SELECT * FROM users WHERE username = $1",
       [username]
     )
-
     if (rows.rows.length === 0) {
       return res.status(404).json({ message: "not found" })
     }
@@ -84,15 +77,29 @@ app.post("/api/v1/signin", async (req, res) => {
     if (!match) {
       return res.status(401).json({ message: "incorrect" })
     }
-    const token = jwt.sign(
-      { id: user.id, username: user.username },
-      "secretkey",
-      { expiresIn: "1h" }
-    )
-    return res.json({ token, username: user.username, balance: user.balance })
+    const userid = rows.rows[0].id;
+    const balance  = rows.rows[0].balance
+    const token = jwt.sign({userid,balance},"secretkey",{expiresIn:"1h"})
+    const magiclink = `http://localhost:3000/api/v1/magic/${token}`;
+    return res.json({message:"logged in successfully click the link now",magiclink,"userid":userid})
   } catch (err) {
     console.error(err)
     return res.status(500).json({ message: "issue" })
+  }
+})
+
+app.get("/api/v1/magic/:token",async(req,res)=>{
+  const {token} = req.params;
+  console.log("hey",token)
+  try{
+    //@ts-ignore
+    const decoded = jwt.verify(token, "secretkey") as unknown as  { userid: number; balance: number };
+    await redis2.xadd("placebalance","*","data",JSON.stringify(decoded))
+    // i dont think we need another validation here its just signin  right..
+    return res.status(401).json({message:"succes"})
+    
+  }catch(err){
+    return res.status(401).json({message:"there was some issue while using the magiclink"})
   }
 })
 

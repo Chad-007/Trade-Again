@@ -7,6 +7,8 @@ const redis = new Redis({
   port: 6380,
 });
 
+let balance:number = 100000000000;
+
 const pool = new Pool({
   host: "127.0.0.1",
   port: 5433,
@@ -26,6 +28,12 @@ const redis3 = new Redis({
   host: "127.0.0.1",
   port: 6380,
 });
+
+//@ts-ignore
+const redis4 = new Redis({
+  host:"127.0.0.1",
+  port:6380
+})
 
 //@ts-ignore
 const redis1 = new Redis({
@@ -54,9 +62,6 @@ redis2.on("message", async (channel, data) => {
   // console.log(latest)
 });
 
-
-let balance:number = 100000000000;
-
 function waitForPrice(asset: string): Promise<any> {
   return new Promise((resolve) => {
     const check = setInterval(() => {
@@ -67,6 +72,24 @@ function waitForPrice(asset: string): Promise<any> {
       console.log(Orders);
     }, 100);
   });
+}
+
+async function getbalance(){
+  while (true) {
+    const stream = await redis.xread(
+      "BLOCK",
+      0,
+      "STREAMS",
+      "placebalance",
+      "$"
+    );
+    if (!stream) continue;
+    const [name, messages] = stream[0] as any;
+    const [id,field] = messages[0]
+    const rawdata = field[1];
+    const raw = JSON.parse(rawdata)
+    console.log("id is",raw.userid,"balance is",raw.balance)
+  }
 }
 
 async function restoreorders() {
@@ -159,7 +182,7 @@ async function closeengine() {
           console.error("Order not found in open_orders:", orderid);
           continue;
         }
-        const currorder = JSON.parse(anyorder);
+        const currorder = (anyorder);
         const market = latest[currorder.asset] || await waitForPrice(currorder.asset);
         const exitprice = market.price;
         const pnl = currorder.side === "long"
@@ -206,6 +229,7 @@ async function closeengine() {
 
 
 async function bootstrap() {
+  getbalance();
   await restoreorders();
   // await restoreprices();
   engine();
