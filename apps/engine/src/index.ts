@@ -9,7 +9,7 @@ const redis = new Redis({
 
 const pool = new Pool({
   host: "127.0.0.1",
-  port: 5432,
+  port: 5433,
   user: "postgres",
   password: "alan",
   database: "postgres"
@@ -110,9 +110,11 @@ async function engine(){
             };
             Orders[orderid] = position
             console.log("after :))",Orders)
+            // use a redis cache for snapshotting
             await redis3.hset("prices", orderid, JSON.stringify(latest));
+            // use a redis cache for snapshotting
             await redis3.hset("open_orders", orderid, JSON.stringify(position));
-            await redis1.publish("placed",JSON.stringify("hey"))
+            await redis1.publish("placed",JSON.stringify(orderid))
         }
     }
 }

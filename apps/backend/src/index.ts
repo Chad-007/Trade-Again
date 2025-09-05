@@ -148,7 +148,6 @@ app.post("/api1/v1/trade/close",async(req:any,res:any)=>{
     }    
 });
 
-
 app.get("/api1/v1/balance/usd",async(req:any,res:any)=>{
     try {
         const user = req.user;
