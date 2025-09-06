@@ -1,15 +1,14 @@
 import Redis = require("ioredis");
-import uuid = require("uuid");
+//@ts-ignore
+import { v4 as uuidv4 } from "uuid";
 const { Pool } = require("pg");
 
-
 //@ts-ignore
-const redis = new Redis({
-  host: "127.0.0.1",
-  port: 6380,
-});
-
-let balances: Record<string, number> = {};
+const readerClient = new Redis({ host: "127.0.0.1", port: 6380 });
+//@ts-ignore
+const writerClient = new Redis({ host: "127.0.0.1", port: 6380 });
+//@ts-ignore
+const subscriberClient = new Redis({ host: "127.0.0.1", port: 6380 });
 
 const pool = new Pool({
   host: "127.0.0.1",
@@ -19,61 +18,27 @@ const pool = new Pool({
   database: "postgres",
 });
 
+let balances: Record<string, number> = {};
 const Orders: Record<string, any> = {};
-const latest: Record<
-  string,
-  { asset: string; price: Number; decimal: number }
-> = {};
+const latest: Record<string, { asset: string; price: number; decimal: number }> = {};
 
-//@ts-ignore
-const redis3 = new Redis({
-  host: "127.0.0.1",
-  port: 6380,
-});
-
-//@ts-ignore
-const redis4 = new Redis({
-    host:"127.0.0.1",
-    port:6380
-})
-
-//@ts-ignore
-const redis5 = new Redis({
-    host:"127.0.0.1",
-    port:6380
-})
-
-//@ts-ignore
-const redis6 = new Redis({
-    host:"127.0.0.1",
-    port:6380
-})
-
-//@ts-ignore
-const redis1 = new Redis({
-  host: "127.0.0.1",
-  port: 6380,
-});
-
-//@ts-ignore
-const redis2 = new Redis({
-  host: "127.0.0.1",
-  port: 6380,
-});
-
-redis2.subscribe("trades");
-//@ts-ignore
-redis2.on("message", async (channel, data) => {
-  const parsed = JSON.parse(data);
-  const updates = parsed.price_updates;
-  for (const update of updates) {
-    latest[update.asset] = {
-      asset: update.asset,
-      price: update.price,
-      decimal: update.decimal,
-    };
-  }
-});
+async function subscribeToTrades() {
+  subscriberClient.subscribe("trades");
+  //@ts-ignore
+  subscriberClient.on("message", (channel, data) => {
+    if (channel === "trades") {
+      const parsed = JSON.parse(data);
+      const updates = parsed.price_updates;
+      for (const update of updates) {
+        latest[update.asset] = {
+          asset: update.asset,
+          price: update.price,
+          decimal: update.decimal,
+        };
+      }
+    }
+  });
+}
 
 function waitForPrice(asset: string): Promise<any> {
   return new Promise((resolve) => {
@@ -82,208 +47,136 @@ function waitForPrice(asset: string): Promise<any> {
         clearInterval(check);
         resolve(latest[asset]);
       }
-      console.log(Orders);
     }, 100);
   });
 }
 
-async function returnbalance() {
-  while (true) {
-    const stream = await redis.xread(
-      "BLOCK",
-      0,
-      "STREAMS",
-      "getbalance",
-      "$"
-    );
-    if (!stream) continue;
-    const [name, messages] = stream[0] as any;
-    const [id, field] = messages[0];
-    const rawdata = field[1];
-    const raw = JSON.parse(rawdata);
-    console.log("id is", raw.userId);
-    const balance = balances[raw.userId] || 0;
-    await redis1.publish("placed", JSON.stringify({
-      userId: raw.userId,
-      balance
-    }));
-  }
-}
-
-
-async function getbalance(){
-  while (true) {
-    const stream = await redis4.xread(
-      "BLOCK",
-      0,
-      "STREAMS",
-      "placebalance",
-      "$"
-    );
-    if (!stream) continue;
-    const [name, messages] = stream[0] as any;
-    const [id,field] = messages[0]
-    const rawdata = field[1];
-    const raw = JSON.parse(rawdata)
-    console.log("id is",raw.userid,"balance is",raw.balance)
-    balances[raw.userid] = parseFloat(raw.balance)
-  }
-}
-
-async function restoreorders() {
-  const all = await redis3.hgetall("open_orders");
-  for (const [id, data] of Object.entries(all)) {
+async function restoreState() {
+  const allOrders = await writerClient.hgetall("open_orders");
+  for (const [id, data] of Object.entries(allOrders)) {
     Orders[id] = JSON.parse(data as string);
   }
-  console.log("restored open orders:", Object.keys(Orders).length);
+  console.log("Restored open orders:", Object.keys(Orders).length);
+
+  const userBalances = await pool.query("SELECT id, balance FROM users");
+  for (const user of userBalances.rows) {
+      balances[user.id] = parseFloat(user.balance);
+  }
+  console.log("Restored user balances:", Object.keys(balances).length);
 }
 
+async function processCreateOrder(payload: any) {
+  const { requestId, userId, asset, type, margin, leverage } = payload;
+  const market = latest[asset] || (await waitForPrice(asset));
+  const price = market.price;
+  
+  if (balances[userId] != null && balances[userId] >= margin) {
+    balances[userId] -= margin;
+    const orderId = uuidv4();
+    const position = {
+      id: orderId,
+      userId: userId,
+      asset: asset,
+      side: type,
+      entryprice: price,
+      margin: margin,
+      leverage: leverage,
+      size: (margin * leverage) / price,
+      liquidationPrice:
+        type === "long"
+          ? price * (1 - 1 / leverage)
+          : price * (1 + 1 / leverage),
+    };
+    Orders[orderId] = position;
+    await writerClient.hset("open_orders", orderId, JSON.stringify(position));
+    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "placed", orderId }));
+  } else {
+    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "insufficient_funds" }));
+  }
+}
 
-// IMP::::::: i dont think we need to restore prices cause we are cahing the openorders with respct to the prices that was at that time
-// async function restoreprices() {
-//   const all = await redis3.hgetall("prices");
-//   for (const [id, data] of Object.entries(all)) {
-//     latest[id] = JSON.parse(data as string);
-//   }
-//   console.log("restored prices:", Object.keys(latest).length);
-// }
+async function processCloseOrder(payload: any) {
+    const { requestId, userId, orderId } = payload;
+    const orderToClose = Orders[orderId];
+
+    if (!orderToClose || orderToClose.userId !== userId) {
+        await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "not_found" }));
+        return;
+    }
+
+    const market = latest[orderToClose.asset] || (await waitForPrice(orderToClose.asset));
+    const exitprice = market.price;
+    const pnl = orderToClose.side === "long"
+        ? (exitprice - orderToClose.entryprice) * orderToClose.size
+        : (orderToClose.entryprice - exitprice) * orderToClose.size;
+
+    const newBalance = (balances[userId] || 0) + orderToClose.margin + pnl;
+    balances[userId] = newBalance;
+
+    const closedOrder = { ...orderToClose, exitprice, pnl, closedAt: new Date().toISOString() };
+    delete Orders[orderId];
+    
+    await pool.query("UPDATE users SET balance = $1 WHERE id = $2", [newBalance, userId]);
+    await writerClient.hdel("open_orders", orderId);
+
+    await pool.query(
+        `INSERT INTO closed_orders (id, userid, asset, side, margin, leverage, entryprice, exitprice, pnl, order_size, closed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [orderId, userId, closedOrder.asset, closedOrder.side, closedOrder.margin, closedOrder.leverage, closedOrder.entryprice, closedOrder.exitprice, pnl, closedOrder.size, closedOrder.closedAt]
+    );
+    
+    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "closed", pnl }));
+}
+
+async function processUpdateBalance(payload: any) {
+    const { userid, balance } = payload;
+    balances[userid] = parseFloat(balance);
+    console.log(`Updated balance for user ${userid}: ${balance}`);
+}
+
+async function processGetBalance(payload: any) {
+    const { requestId, userId } = payload;
+    const balance = balances[userId] || 0;
+    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, balance }));
+}
 
 async function engine() {
   let lastId = "$";
-
   while (true) {
-    const stream = await redis5.xread(
-      "BLOCK",
-      0,
-      "STREAMS",
-      "placeorder",
-      lastId
-    );
+    const stream = await readerClient.xread("BLOCK", 0, "STREAMS", "command_stream", lastId);
     if (!stream) continue;
-    const [name, messages] = stream[0] as any;
 
+    const [name, messages] = stream[0] as any;
     for (const [id, fields] of messages) {
       try {
-        console.log("Processing message:", id, fields);
-        const rawdata = fields[1];
-        const raw = JSON.parse(rawdata);
-        console.log("Parsed order data:", raw);
-        const orderid = uuid.v4();
-        // wait if not price is there mostly wont be needed
-        const market = latest[raw.asset] || (await waitForPrice(raw.asset));
-        const price = market.price;
-        const position = {
-          id: orderid,
-          asset: raw.asset,
-          side: raw.type,
-          entryprice: price,
-          margin: raw.margin,
-          leverage: raw.leverage,
-          size: (raw.margin * raw.leverage) / price,
-          liquidationPrice:
-            raw.type === "long"
-              ? price * (1 - 1 / raw.leverage)
-              : price * (1 + 1 / raw.leverage),
-        };
-        console.log("this is the raw data",raw)
-        //@ts-ignore
-        if(balances[raw.userId] != null && balances[raw.userId] >= raw.margin){
-          //@ts-ignore
-          balances[raw.userId] -= raw.margin;
-          Orders[orderid] = position;
-          console.log("created position:", Orders[orderid])
-          //snapshot  at a spot rather than one by one
-          await redis3.multi().hset("prices", raw.asset, JSON.stringify({
-                  asset: market.asset,
-                  price: market.price,
-                  decimal: market.decimal,
-                  })).hset("open_orders", orderid, JSON.stringify(position)).exec();
-          await redis1.publish("placed", orderid);
-        }
-        else{
-            await redis1.publish("not placed", orderid);
+        const message = JSON.parse(fields[1]);
+        switch (message.type) {
+          case 'CREATE_ORDER':
+            await processCreateOrder(message.payload);
+            break;
+          case 'CLOSE_ORDER':
+            await processCloseOrder(message.payload);
+            break;
+          case 'UPDATE_BALANCE':
+            await processUpdateBalance(message.payload);
+            break;
+          case 'GET_BALANCE':
+            await processGetBalance(message.payload);
+            break;
         }
       } catch (err) {
-        console.error("processing error:", err);
+        console.error("Processing error:", err);
       } finally {
         lastId = id;
-        await redis3.set("placeorder:last_id", lastId);
       }
     }
   }
 }
-async function closeengine() {
-  // to prevent reprocessing  ie give me all the messages after lastid
-  let lastId = (await redis3.get("closeorder:last_id")) || "0";
-  while (true) {
-    const stream = await redis6.xread("BLOCK", 0, "STREAMS", "closeorder", lastId);
-    if (!stream) continue;
-    const [name, messages] = stream[0] as any;
-    for (const [id, fields] of messages) {
-      try {
-        const rawdata = fields[1];
-        const raw = JSON.parse(rawdata);
-        const orderid = raw.orderId;
-        const userid = raw.userId;
-        const anyorder = Orders[orderid];
-        if (!anyorder) {
-          console.error("order not found in open_orders:", orderid);
-          continue;
-        }
-        const currorder = (anyorder);
-        const market = latest[currorder.asset] || await waitForPrice(currorder.asset);
-        const exitprice = market.price;
-        const pnl = currorder.side === "long"
-          ? (exitprice - currorder.entryprice) * currorder.size
-          : (currorder.entryprice - exitprice) * currorder.size;
-        const closedOrder = {
-          ...currorder,
-          exitprice,
-          pnl,
-          closedAt: new Date().toISOString(),
-        };
-        //@ts-ignore
-        balances[raw.userid] += pnl
-        console.log("the you this much money left brotha",balances[raw.userid])
-        await redis3.hdel("open_orders", orderid);
-        const orderId = orderid
-        await redis1.publish("placed", JSON.stringify({orderId}));
-        await pool.query(
-          `INSERT INTO closed_orders
-           (id, userid, asset, side, margin, leverage, entryprice, exitprice, pnl, order_size, closed_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [
-            orderid,
-            userid,
-            closedOrder.asset,
-            closedOrder.side,
-            closedOrder.margin,
-            closedOrder.leverage,
-            closedOrder.entryprice,
-            closedOrder.exitprice,
-            closedOrder.pnl,
-            closedOrder.size,
-            closedOrder.closedAt,
-          ]
-        );
-        console.log("closed order:", closedOrder);
-      } catch (err) {
-        console.error("processing error:", err);
-      } finally {
-        lastId = id;
-        await redis3.set("closeorder:last_id", lastId);
-      }
-    }
-  }
-}
-
 
 async function bootstrap() {
-  returnbalance();
-  getbalance();
-  await restoreorders();
+  await subscribeToTrades();
+  await restoreState();
   engine();
-  closeengine();
+  console.log("Engine started and listening for commands.");
 }
 
 bootstrap();

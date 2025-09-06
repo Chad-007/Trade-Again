@@ -1,40 +1,61 @@
 import express = require("express");
 import jwt = require("jsonwebtoken");
-const { Pool } = require("pg");
 import bcrypt = require("bcrypt");
 import Redis = require("ioredis");
+//@ts-ignore
+import { v4 as uuidv4 } from "uuid";
+const { Pool } = require("pg");
+
+class RedisSubscriber {
+    //@ts-ignore
+    private client: Redis;
+    private callbacks: Record<string, (value: any) => void>;
+
+    constructor() {
+      //@ts-ignore
+        this.client = new Redis({ host: "127.0.0.1", port: 6380 });
+        this.callbacks = {};
+        this.runLoop();
+    }
+
+    async runLoop() {
+        let lastId = "$";
+        while (true) {
+            const response = await this.client.xread("BLOCK", 0, "STREAMS", "callback_stream", lastId);
+            if (!response) continue;
+
+            const [stream, messages] = response[0] as any;
+            for (const [messageId, fields] of messages) {
+                const payload = JSON.parse(fields[1]);
+                if (this.callbacks[payload.requestId]) {
+                  //@ts-ignore
+                    this.callbacks[payload.requestId](payload);
+                    delete this.callbacks[payload.requestId];
+                }
+                lastId = messageId;
+            }
+        }
+    }
+
+    public waitForMessage(requestId: string): Promise<any> {
+        return new Promise((resolve, reject) => {
+            this.callbacks[requestId] = resolve;
+            setTimeout(() => {
+                if (this.callbacks[requestId]) {
+                    delete this.callbacks[requestId];
+                    reject(new Error("Request timed out"));
+                }
+            }, 10000);
+        });
+    }
+}
+
 const app = express();
 app.use(express.json());
-
 //@ts-ignore
-const redis = new Redis({
-  host: "127.0.0.1",
-  port: 6380,
-});
+const redisClient = new Redis({ host: "127.0.0.1", port: 6380 });
+const redisSubscriber = new RedisSubscriber();
 
-//@ts-ignore
-const redis1 = new Redis({
-  host: "127.0.0.1",
-  port: 6380,
-});
-
-//@ts-ignore
-const redis2 = new Redis({
-  host: "127.0.0.1",
-  port: 6380,
-});
-
-
-
-//@ts-ignore
-const redis4 = new Redis({
-  host:"127.0.0.1",
-  port:6380
-})
-
-
-redis1.subscribe("placed");
-//@ts-ignore
 const pool = new Pool({
   host: "127.0.0.1",
   port: 5433,
@@ -45,216 +66,142 @@ const pool = new Pool({
 
 function auth(req: any, res: any, next: any) {
   const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ message: "no token provided" });
+  if (!token) return res.status(401).json({ message: "No token provided" });
   try {
-    const decoded = jwt.verify(token, "secretkey") as { userid: number };
-    req.user = decoded;
+    req.user = jwt.verify(token, "secretkey");
     next();
   } catch {
-    return res.status(401).json({ message: "invalid token" });
+    return res.status(401).json({ message: "Invalid token" });
   }
 }
+
 app.post("/api/v1/signup", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const hashed = await bcrypt.hash(password, 10);
-    const hey = await pool.query("SELECT * from users where username = $1", [
-      username,
-    ]);
-    if (hey.rows.length === 0) {
-      const result = await pool.query(
-        "insert into users(username,password,balance)values($1,$2,$3) returning id,balance",
-        [username, hashed, 100000000.0]
-      );
-      const userid = result.rows[0].id;
-      const balance = result.rows[0].balance;
-      const token = jwt.sign({ userid, balance }, "secretkey", {
-        expiresIn: "1h",
-      });
-      const magiclink = `http://localhost:3000/api/v1/magic/${token}`;
-      return res
-        .status(200)
-        .json({ message: "signed up successfully", magiclink, userid: userid });
-    } else {
-      return res.json({ message: "user already exists try logging in" });
+    const existingUser = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ message: "User already exists" });
     }
+    const hashed = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      "INSERT INTO users(username, password, balance) VALUES($1, $2, $3) RETURNING id",
+      [username, hashed, 100000.0]
+    );
+    const userid = result.rows[0].id;
+    const token = jwt.sign({ userid }, "secretkey", { expiresIn: "1h" });
+    const magicLink = `http://localhost:3000/api/v1/magic/${token}`;
+    return res.status(200).json({ message: "Signed up successfully", token, userid, magicLink });
   } catch (err) {
     console.error("Signup error:", err);
-    return res.status(401).json({ message: "there was some issue" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 app.post("/api/v1/signin", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const rows = await pool.query("SELECT * FROM users WHERE username = $1", [
-      username,
-    ]);
-    if (rows.rows.length === 0) {
-      return res.status(404).json({ message: "not found" });
+    const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
     }
-    const user = rows.rows[0];
+    const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      return res.status(401).json({ message: "incorrect" });
+      return res.status(401).json({ message: "Incorrect password" });
     }
-    const userid = rows.rows[0].id;
-    const balance = rows.rows[0].balance;
-    const token = jwt.sign({ userid, balance }, "secretkey", {
-      expiresIn: "1h",
-    });
-    const magiclink = `http://localhost:3000/api/v1/magic/${token}`;
-    return res.json({
-      message: "logged in successfully click the link now",
-      magiclink,
-      userid: userid,
-    });
+    const token = jwt.sign({ userid: user.id }, "secretkey", { expiresIn: "1h" });
+    const magicLink = `http://localhost:3000/api/v1/magic/${token}`;
+    return res.json({ message: "Logged in successfully", token, userid: user.id, magicLink });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "issue" });
+    console.error("Signin error:", err);
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 app.get("/api/v1/magic/:token", async (req, res) => {
-  const { token } = req.params;
-  console.log("hey", token);
-  try {
-    //@ts-ignore
-    const decoded = jwt.verify(token, "secretkey") as unknown as {
-      userid: number;
-      balance: number;
-    };
-    await redis2.xadd("placebalance", "*", "data", JSON.stringify(decoded));
-    // i dont think we need another validation here its just signin  right..
-    return res.status(200).json({ message: "success" });
-  } catch (err) {
-    return res
-      .status(401)
-      .json({ message: "there was some issue while using the magiclink" });
-  }
+    try {
+        const { token } = req.params;
+        const decoded = jwt.verify(token, "secretkey") as { userid: number };
+        const result = await pool.query("SELECT balance FROM users WHERE id = $1", [decoded.userid]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "User for token not found" });
+        }
+
+        const balance = result.rows[0].balance;
+        const command = { type: 'UPDATE_BALANCE', payload: { userid: decoded.userid, balance } };
+        await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
+        
+        return res.status(200).json({ message: "Balance initialized successfully in the engine." });
+    } catch (err) {
+        console.error("Magic link error:", err);
+        return res.status(500).json({ message: "Invalid token or internal error" });
+    }
 });
 
 app.post("/api/v1/trade/create", auth, async (req: any, res: any) => {
-  const user = req.user;
-  console.log(user)
+  const requestId = uuidv4();
   try {
-    const orderData = {
-      ...req.body,
-      userId: user.userid,
+    const command = {
+      type: 'CREATE_ORDER',
+      payload: { ...req.body, userId: req.user.userid, requestId }
     };
-    await redis.xadd("placeorder", "*", "data", JSON.stringify(orderData));
-    let responded = false;
-    //@ts-ignore
-    redis1.once("message", (channel, message) => {
-      if (!responded) {
-        responded = true;
-        res.status(200).json({ orderId: message });
-      }
-    });
-    setTimeout(() => {
-      if (!responded) {
-        responded = true;
-        res
-          .status(408)
-          .json({ message: "there was some issue while processing the order" });
-      }
-    }, 10000);
+    await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
+    const response = await redisSubscriber.waitForMessage(requestId);
+    if (response.status === "placed") {
+      res.status(200).json({ message: "Order placed", orderId: response.orderId });
+    } else {
+      res.status(400).json({ message: "Order failed", reason: response.status });
+    }
   } catch (err) {
-    return res.status(401).json({ message: "there was some issue" });
+    res.status(500).json({ message: "Request timed out or failed" });
   }
 });
 
 app.post("/api/v1/trade/close", auth, async (req: any, res: any) => {
-  const user = req.user;
+  const requestId = uuidv4();
   try {
-    const closeData = {
-      orderId: req.body.orderId,
-      userId: user.userid,
+    const command = {
+      type: 'CLOSE_ORDER',
+      payload: { ...req.body, userId: req.user.userid, requestId }
     };
-    await redis.xadd("closeorder", "*", "orderid", JSON.stringify(closeData));
-    const timeout = setTimeout(() => {
-      if (!res.headersSent) {
-        res.status(408).json({ message: "timeout issue" });
-      }
-    }, 10000);
-    //@ts-ignore
-    redis1.once("message", (channel, message) => {
-      if (!res.headersSent) {
-        clearTimeout(timeout);
-        const parsed = JSON.parse(message);
-        res.status(200).json({ orderId: parsed.orderId });
-      }
-    });
-  } catch (err) {
-    if (!res.headersSent) {
-      res.status(401).json({ message: "there was some issue" });
+    await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
+    const response = await redisSubscriber.waitForMessage(requestId);
+    if (response.status === "closed") {
+      res.status(200).json({ message: "Order closed", pnl: response.pnl });
+    } else {
+      res.status(400).json({ message: "Failed to close order", reason: response.status });
     }
+  } catch (err) {
+    res.status(500).json({ message: "Request timed out or failed" });
   }
 });
 
-app.get("/api/v1/balance/usd", auth, async (req: any, res: any) => {
-  try {
-    const id = req.body;
-    const result = await pool.query("SELECT balance FROM users WHERE id = $1", [
-      id,
-    ]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: "user not found" });
-    }
-    return res.json({ balance: result.rows[0].balance });
-  } catch (err) {
-    console.error(err);
-    return res
-      .status(500)
-      .json({ message: "there was some issue while fetching the balance" });
-  }
-});
 app.get("/api/v1/balance", auth, async (req: any, res: any) => {
-  const userId = req.user.userid;
-  await redis.xadd("getbalance", "*", "orderid", JSON.stringify({ userId }));
-  let responded = false;
-  const listener = async (channel: string, message: string) => {
-    const data = JSON.parse(message);
-    if (data.userId === userId && !responded) {
-      responded = true;
-      res.status(200).json({ balance: data.balance });
-      redis1.removeListener("message", listener);
+    const requestId = uuidv4();
+    try {
+        const command = {
+            type: 'GET_BALANCE',
+            payload: { userId: req.user.userid, requestId }
+        };
+        await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
+        const response = await redisSubscriber.waitForMessage(requestId);
+        res.status(200).json({ balance: response.balance });
+    } catch (err) {
+        res.status(500).json({ message: "Failed to get balance" });
     }
-  };
-  redis1.on("message", listener);
-  setTimeout(() => {
-    if (!responded) {
-      responded = true;
-      redis1.removeListener("message", listener);
-      res.status(408).json({ message: "there was some issue while processing the order" });
-    }
-  }, 10000);
 });
 
-
-app.get("/api/v1/suppotedAssets", auth, async (req: any, res: any) => {
-  const assets = {
+app.get("/api/v1/assets", auth, async (req: any, res: any) => {
+  return res.json({
     assets: [
-      {
-        symbol: "BTC",
-        name: "Bitcoin",
-        imageUrl: "image.com/png",
-      },
-      {
-        symbol: "ETH",
-        name: "Ethereum",
-        imageUrl: "image.com/png",
-      },
-      {
-        symbol: "SOL",
-        name: "SOLANA",
-        imageUrl: "image.com/png",
-      },
+      { symbol: "BTC", name: "Bitcoin" },
+      { symbol: "ETH", name: "Ethereum" },
+      { symbol: "SOL", name: "Solana" },
     ],
-  };
-  return res.json(assets);
+  });
 });
 
 app.listen(3000, () => {
-  console.log("im listening");
+  console.log("Backend server listening on port 3000");
 });
