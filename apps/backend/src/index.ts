@@ -6,11 +6,13 @@ import Redis = require("ioredis");
 import { v4 as uuidv4 } from "uuid";
 const { Pool } = require("pg");
 
+
+
+//callback logic for easier error return
 class RedisSubscriber {
     //@ts-ignore
     private client: Redis;
     private callbacks: Record<string, (value: any) => void>;
-
     constructor() {
       //@ts-ignore
         this.client = new Redis({ host: "127.0.0.1", port: 6380 });
@@ -80,7 +82,7 @@ app.post("/api/v1/signup", async (req, res) => {
   try {
     const existingUser = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
     if (existingUser.rows.length > 0) {
-      return res.status(409).json({ message: "User already exists" });
+      return res.status(409).json({ message: "user exists" });
     }
     const hashed = await bcrypt.hash(password, 10);
     const result = await pool.query(
@@ -93,7 +95,7 @@ app.post("/api/v1/signup", async (req, res) => {
     return res.status(200).json({ message: "Signed up successfully", token, userid, magicLink });
   } catch (err) {
     console.error("Signup error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "server error" });
   }
 });
 
@@ -102,7 +104,7 @@ app.post("/api/v1/signin", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: "user not found" });
     }
     const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password);
@@ -114,7 +116,7 @@ app.post("/api/v1/signin", async (req, res) => {
     return res.json({ message: "Logged in successfully", token, userid: user.id, magicLink });
   } catch (err) {
     console.error("Signin error:", err);
-    return res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "server error" });
   }
 });
 
@@ -125,23 +127,24 @@ app.get("/api/v1/magic/:token", async (req, res) => {
         const result = await pool.query("SELECT balance FROM users WHERE id = $1", [decoded.userid]);
         
         if (result.rows.length === 0) {
-            return res.status(404).json({ message: "User for token not found" });
+            return res.status(404).json({ message: "user not found" });
         }
 
         const balance = result.rows[0].balance;
         const command = { type: 'UPDATE_BALANCE', payload: { userid: decoded.userid, balance } };
         await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
         
-        return res.status(200).json({ message: "Balance initialized successfully in the engine." });
+        return res.status(200).json({ message: "balance initlialized" });
     } catch (err) {
         console.error("Magic link error:", err);
-        return res.status(500).json({ message: "Invalid token or internal error" });
+        return res.status(500).json({ message: "invalid token" });
     }
 });
 
 app.post("/api/v1/trade/create", auth, async (req: any, res: any) => {
   const requestId = uuidv4();
   try {
+    // send both the payload and the type
     const command = {
       type: 'CREATE_ORDER',
       payload: { ...req.body, userId: req.user.userid, requestId }
@@ -149,18 +152,19 @@ app.post("/api/v1/trade/create", auth, async (req: any, res: any) => {
     await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
     const response = await redisSubscriber.waitForMessage(requestId);
     if (response.status === "placed") {
-      res.status(200).json({ message: "Order placed", orderId: response.orderId });
+      res.status(200).json({ message: "order placed", orderId: response.orderId });
     } else {
-      res.status(400).json({ message: "Order failed", reason: response.status });
+      res.status(400).json({ message: "failed to palce order", reason: response.status });
     }
   } catch (err) {
-    res.status(500).json({ message: "Request timed out or failed" });
+    res.status(500).json({ message: "time out" });
   }
 });
 
 app.post("/api/v1/trade/close", auth, async (req: any, res: any) => {
   const requestId = uuidv4();
   try {
+    // send both the payload and the type
     const command = {
       type: 'CLOSE_ORDER',
       payload: { ...req.body, userId: req.user.userid, requestId }
@@ -168,18 +172,19 @@ app.post("/api/v1/trade/close", auth, async (req: any, res: any) => {
     await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
     const response = await redisSubscriber.waitForMessage(requestId);
     if (response.status === "closed") {
-      res.status(200).json({ message: "Order closed", pnl: response.pnl });
+      res.status(200).json({ message: "order closed", pnl: response.pnl });
     } else {
-      res.status(400).json({ message: "Failed to close order", reason: response.status });
+      res.status(400).json({ message: "order wasnt closed", reason: response.status });
     }
   } catch (err) {
-    res.status(500).json({ message: "Request timed out or failed" });
+    res.status(500).json({ message: "time out" });
   }
 });
 
 app.get("/api/v1/balance", auth, async (req: any, res: any) => {
     const requestId = uuidv4();
     try {
+        // send both the payload and the type
         const command = {
             type: 'GET_BALANCE',
             payload: { userId: req.user.userid, requestId }
@@ -188,7 +193,7 @@ app.get("/api/v1/balance", auth, async (req: any, res: any) => {
         const response = await redisSubscriber.waitForMessage(requestId);
         res.status(200).json({ balance: response.balance });
     } catch (err) {
-        res.status(500).json({ message: "Failed to get balance" });
+        res.status(500).json({ message: "there was some issue with getting the balance" });
     }
 });
 
@@ -202,6 +207,4 @@ app.get("/api/v1/assets", auth, async (req: any, res: any) => {
   });
 });
 
-app.listen(3000, () => {
-  console.log("Backend server listening on port 3000");
-});
+app.listen(3000);

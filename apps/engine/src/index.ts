@@ -56,13 +56,13 @@ async function restoreState() {
   for (const [id, data] of Object.entries(allOrders)) {
     Orders[id] = JSON.parse(data as string);
   }
-  console.log("Restored open orders:", Object.keys(Orders).length);
+  console.log("restored the  open orders:", Object.keys(Orders).length);
 
   const userBalances = await pool.query("SELECT id, balance FROM users");
   for (const user of userBalances.rows) {
       balances[user.id] = parseFloat(user.balance);
   }
-  console.log("Restored user balances:", Object.keys(balances).length);
+  console.log("restored the  user balances:", Object.keys(balances).length);
 }
 
 async function processCreateOrder(payload: any) {
@@ -91,7 +91,7 @@ async function processCreateOrder(payload: any) {
     await writerClient.hset("open_orders", orderId, JSON.stringify(position));
     await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "placed", orderId }));
   } else {
-    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "insufficient_funds" }));
+    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "low balance" }));
   }
 }
 
@@ -130,7 +130,7 @@ async function processCloseOrder(payload: any) {
 async function processUpdateBalance(payload: any) {
     const { userid, balance } = payload;
     balances[userid] = parseFloat(balance);
-    console.log(`Updated balance for user ${userid}: ${balance}`);
+    console.log(`updated the balance for user ${userid}: ${balance}`);
 }
 
 async function processGetBalance(payload: any) {
@@ -164,7 +164,7 @@ async function engine() {
             break;
         }
       } catch (err) {
-        console.error("Processing error:", err);
+        console.error("processing error:", err);
       } finally {
         lastId = id;
       }
@@ -176,7 +176,7 @@ async function bootstrap() {
   await subscribeToTrades();
   await restoreState();
   engine();
-  console.log("Engine started and listening for commands.");
+  console.log("engine started");
 }
 
 bootstrap();
