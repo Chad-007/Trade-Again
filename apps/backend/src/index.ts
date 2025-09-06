@@ -17,24 +17,26 @@ class RedisSubscriber {
       //@ts-ignore
         this.client = new Redis({ host: "127.0.0.1", port: 6380 });
         this.callbacks = {};
-        this.runLoop();
+        this.runloop();
     }
 
-    async runLoop() {
+    async runloop() {
         let lastId = "$";
         while (true) {
             const response = await this.client.xread("BLOCK", 0, "STREAMS", "callback_stream", lastId);
             if (!response) continue;
-
             const [stream, messages] = response[0] as any;
             for (const [messageId, fields] of messages) {
+              //gets the payload to resolve the promise
                 const payload = JSON.parse(fields[1]);
                 if (this.callbacks[payload.requestId]) {
                   //@ts-ignore
+                  // resolve the promise and deletes it :)) next level shit..  ::::
                     this.callbacks[payload.requestId](payload);
                     delete this.callbacks[payload.requestId];
                 }
                 lastId = messageId;
+                console.log(lastId)
             }
         }
     }
@@ -125,11 +127,9 @@ app.get("/api/v1/magic/:token", async (req, res) => {
         const { token } = req.params;
         const decoded = jwt.verify(token, "secretkey") as { userid: number };
         const result = await pool.query("SELECT balance FROM users WHERE id = $1", [decoded.userid]);
-        
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "user not found" });
         }
-
         const balance = result.rows[0].balance;
         const command = { type: 'UPDATE_BALANCE', payload: { userid: decoded.userid, balance } };
         await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
@@ -171,7 +171,7 @@ app.post("/api/v1/trade/close", auth, async (req: any, res: any) => {
     };
     await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
     const response = await redisSubscriber.waitForMessage(requestId);
-    if (response.status === "closed") {
+    if (response.status === "closed") { 
       res.status(200).json({ message: "order closed", pnl: response.pnl });
     } else {
       res.status(400).json({ message: "order wasnt closed", reason: response.status });

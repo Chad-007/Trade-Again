@@ -4,11 +4,11 @@ import { v4 as uuidv4 } from "uuid";
 const { Pool } = require("pg");
 
 //@ts-ignore
-const readerClient = new Redis({ host: "127.0.0.1", port: 6380 });
+const reader = new Redis({ host: "127.0.0.1", port: 6380 });
 //@ts-ignore
-const writerClient = new Redis({ host: "127.0.0.1", port: 6380 });
+const writer = new Redis({ host: "127.0.0.1", port: 6380 });
 //@ts-ignore
-const subscriberClient = new Redis({ host: "127.0.0.1", port: 6380 });
+const subscriber = new Redis({ host: "127.0.0.1", port: 6380 });
 
 const pool = new Pool({
   host: "127.0.0.1",
@@ -22,10 +22,10 @@ let balances: Record<string, number> = {};
 const Orders: Record<string, any> = {};
 const latest: Record<string, { asset: string; price: number; decimal: number }> = {};
 
-async function subscribeToTrades() {
-  subscriberClient.subscribe("trades");
+async function subtotrades() {
+  subscriber.subscribe("trades");
   //@ts-ignore
-  subscriberClient.on("message", (channel, data) => {
+  subscriber.on("message", (channel, data) => {
     if (channel === "trades") {
       const parsed = JSON.parse(data);
       const updates = parsed.price_updates;
@@ -40,7 +40,7 @@ async function subscribeToTrades() {
   });
 }
 
-function waitForPrice(asset: string): Promise<any> {
+function waiterforprice(asset: string): Promise<any> {
   return new Promise((resolve) => {
     const check = setInterval(() => {
       if (latest[asset]) {
@@ -52,14 +52,14 @@ function waitForPrice(asset: string): Promise<any> {
 }
 
 async function restoreState() {
-  const allOrders = await writerClient.hgetall("open_orders");
-  for (const [id, data] of Object.entries(allOrders)) {
+  const allorders = await writer.hgetall("open_orders");
+  for (const [id, data] of Object.entries(allorders)) {
     Orders[id] = JSON.parse(data as string);
   }
   console.log("restored the  open orders:", Object.keys(Orders).length);
 
-  const userBalances = await pool.query("SELECT id, balance FROM users");
-  for (const user of userBalances.rows) {
+  const userbalances = await pool.query("SELECT id, balance FROM users");
+  for (const user of userbalances.rows) {
       balances[user.id] = parseFloat(user.balance);
   }
   console.log("restored the  user balances:", Object.keys(balances).length);
@@ -67,7 +67,7 @@ async function restoreState() {
 
 async function processCreateOrder(payload: any) {
   const { requestId, userId, asset, type, margin, leverage } = payload;
-  const market = latest[asset] || (await waitForPrice(asset));
+  const market = latest[asset] || (await waiterforprice(asset));
   const price = market.price;
   
   if (balances[userId] != null && balances[userId] >= margin) {
@@ -82,16 +82,16 @@ async function processCreateOrder(payload: any) {
       margin: margin,
       leverage: leverage,
       size: (margin * leverage) / price,
-      liquidationPrice:
+      liquidationprice:
         type === "long"
           ? price * (1 - 1 / leverage)
           : price * (1 + 1 / leverage),
     };
     Orders[orderId] = position;
-    await writerClient.hset("open_orders", orderId, JSON.stringify(position));
-    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "placed", orderId }));
+    await writer.hset("open_orders", orderId, JSON.stringify(position));
+    await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "placed", orderId }));
   } else {
-    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "low balance" }));
+    await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "low balance" }));
   }
 }
 
@@ -100,31 +100,31 @@ async function processCloseOrder(payload: any) {
     const orderToClose = Orders[orderId];
 
     if (!orderToClose || orderToClose.userId !== userId) {
-        await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "not_found" }));
+        await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "not_found" }));
         return;
     }
 
-    const market = latest[orderToClose.asset] || (await waitForPrice(orderToClose.asset));
+    const market = latest[orderToClose.asset] || (await waiterforprice(orderToClose.asset));
     const exitprice = market.price;
     const pnl = orderToClose.side === "long"
         ? (exitprice - orderToClose.entryprice) * orderToClose.size
         : (orderToClose.entryprice - exitprice) * orderToClose.size;
 
-    const newBalance = (balances[userId] || 0) + orderToClose.margin + pnl;
-    balances[userId] = newBalance;
+    const newbalance = (balances[userId] || 0) + orderToClose.margin + pnl;
+    balances[userId] = newbalance;
 
     const closedOrder = { ...orderToClose, exitprice, pnl, closedAt: new Date().toISOString() };
     delete Orders[orderId];
     
-    await pool.query("UPDATE users SET balance = $1 WHERE id = $2", [newBalance, userId]);
-    await writerClient.hdel("open_orders", orderId);
+    await pool.query("UPDATE users SET balance = $1 WHERE id = $2", [newbalance, userId]);
+    await writer.hdel("open_orders", orderId);
 
     await pool.query(
         `INSERT INTO closed_orders (id, userid, asset, side, margin, leverage, entryprice, exitprice, pnl, order_size, closed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [orderId, userId, closedOrder.asset, closedOrder.side, closedOrder.margin, closedOrder.leverage, closedOrder.entryprice, closedOrder.exitprice, pnl, closedOrder.size, closedOrder.closedAt]
     );
     
-    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "closed", pnl }));
+    await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "closed", pnl }));
 }
 
 async function processUpdateBalance(payload: any) {
@@ -136,13 +136,13 @@ async function processUpdateBalance(payload: any) {
 async function processGetBalance(payload: any) {
     const { requestId, userId } = payload;
     const balance = balances[userId] || 0;
-    await writerClient.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, balance }));
+    await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, balance }));
 }
 
 async function engine() {
   let lastId = "$";
   while (true) {
-    const stream = await readerClient.xread("BLOCK", 0, "STREAMS", "command_stream", lastId);
+    const stream = await reader.xread("BLOCK", 0, "STREAMS", "command_stream", lastId);
     if (!stream) continue;
 
     const [name, messages] = stream[0] as any;
@@ -172,11 +172,11 @@ async function engine() {
   }
 }
 
-async function bootstrap() {
-  await subscribeToTrades();
+async function start() {
+  await subtotrades();
   await restoreState();
   engine();
   console.log("engine started");
 }
 
-bootstrap();
+start();
