@@ -7,7 +7,7 @@ const redis = new Redis({
   port: 6380,
 });
 
-const balances: Record<string, number> = {};
+let balances: Record<string, number> = {};
 
 const pool = new Pool({
   host: "127.0.0.1",
@@ -100,7 +100,7 @@ async function getbalance(){
     const rawdata = field[1];
     const raw = JSON.parse(rawdata)
     console.log("id is",raw.userid,"balance is",raw.balance)
-    balances[raw.userid] = parseFloat(raw.backend)
+    balances[raw.userid] = parseFloat(raw.balance)
   }
 }
 
@@ -159,8 +159,11 @@ async function engine() {
               ? price * (1 - 1 / raw.leverage)
               : price * (1 + 1 / raw.leverage),
         };
-        if(balance>raw.margin){
-          balance -= raw.margin*raw.leverage;
+        console.log("this is the raw data",raw)
+        //@ts-ignore
+        if(balances[raw.userId] != null && balances[raw.userId] >= raw.margin){
+          //@ts-ignore
+          balances[raw.userId] -= raw.margin;
           Orders[orderid] = position;
           console.log("created position:", Orders[orderid])
           //snapshot  at a spot rather than one by one
@@ -213,8 +216,9 @@ async function closeengine() {
           pnl,
           closedAt: new Date().toISOString(),
         };
-        balance += pnl
-        console.log("the you this much money left brotha",balance)
+        //@ts-ignore
+        balances[raw.userid] += pnl
+        console.log("the you this much money left brotha",balances[raw.userid])
         await redis3.hdel("open_orders", orderid);
         const orderId = orderid
         await redis1.publish("placed", JSON.stringify({orderId}));
