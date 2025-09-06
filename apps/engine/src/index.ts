@@ -1,6 +1,8 @@
 import Redis = require("ioredis");
 import uuid = require("uuid");
 const { Pool } = require("pg");
+
+
 //@ts-ignore
 const redis = new Redis({
   host: "127.0.0.1",
@@ -84,6 +86,30 @@ function waitForPrice(asset: string): Promise<any> {
     }, 100);
   });
 }
+
+async function returnbalance() {
+  while (true) {
+    const stream = await redis.xread(
+      "BLOCK",
+      0,
+      "STREAMS",
+      "getbalance",
+      "$"
+    );
+    if (!stream) continue;
+    const [name, messages] = stream[0] as any;
+    const [id, field] = messages[0];
+    const rawdata = field[1];
+    const raw = JSON.parse(rawdata);
+    console.log("id is", raw.userId);
+    const balance = balances[raw.userId] || 0;
+    await redis1.publish("placed", JSON.stringify({
+      userId: raw.userId,
+      balance
+    }));
+  }
+}
+
 
 async function getbalance(){
   while (true) {
@@ -253,6 +279,7 @@ async function closeengine() {
 
 
 async function bootstrap() {
+  returnbalance();
   getbalance();
   await restoreorders();
   engine();

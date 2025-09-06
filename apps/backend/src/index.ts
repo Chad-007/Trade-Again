@@ -24,6 +24,15 @@ const redis2 = new Redis({
   port: 6380,
 });
 
+
+
+//@ts-ignore
+const redis4 = new Redis({
+  host:"127.0.0.1",
+  port:6380
+})
+
+
 redis1.subscribe("placed");
 //@ts-ignore
 const pool = new Pool({
@@ -117,7 +126,7 @@ app.get("/api/v1/magic/:token", async (req, res) => {
     };
     await redis2.xadd("placebalance", "*", "data", JSON.stringify(decoded));
     // i dont think we need another validation here its just signin  right..
-    return res.status(200).json({ message: "succes" });
+    return res.status(200).json({ message: "success" });
   } catch (err) {
     return res
       .status(401)
@@ -200,22 +209,28 @@ app.get("/api/v1/balance/usd", auth, async (req: any, res: any) => {
       .json({ message: "there was some issue while fetching the balance" });
   }
 });
-
 app.get("/api/v1/balance", auth, async (req: any, res: any) => {
-  const { username } = req.body;
-  try {
-    const rows = await pool.query("select * from users where username = $1", [
-      username,
-    ]);
-    const balance = rows.rows[0].balance;
-    console.log(balance);
-    return res.status(200).json({ message: balance });
-  } catch (err) {
-    return res
-      .status(401)
-      .json({ message: "There was some issue while fetching" });
-  }
+  const userId = req.user.userid;
+  await redis.xadd("getbalance", "*", "orderid", JSON.stringify({ userId }));
+  let responded = false;
+  const listener = async (channel: string, message: string) => {
+    const data = JSON.parse(message);
+    if (data.userId === userId && !responded) {
+      responded = true;
+      res.status(200).json({ balance: data.balance });
+      redis1.removeListener("message", listener);
+    }
+  };
+  redis1.on("message", listener);
+  setTimeout(() => {
+    if (!responded) {
+      responded = true;
+      redis1.removeListener("message", listener);
+      res.status(408).json({ message: "there was some issue while processing the order" });
+    }
+  }, 10000);
 });
+
 
 app.get("/api/v1/suppotedAssets", auth, async (req: any, res: any) => {
   const assets = {
