@@ -24,11 +24,13 @@ class RedisSubscriber {
         let lastId = "$";
         while (true) {
             const response = await this.client.xread("BLOCK", 0, "STREAMS", "callback_stream", lastId);
+            // console.log("this  was the reponse",response.assetbalance)
             if (!response) continue;
             const [stream, messages] = response[0] as any;
             for (const [messageId, fields] of messages) {
               //gets the payload to resolve the promise
                 const payload = JSON.parse(fields[1]);
+                console.log("this was the response payload:", payload); 
                 if (this.callbacks[payload.requestId]) {
                   //@ts-ignore
                   // resolve the promise and deletes it :)) next level shit..  ::::
@@ -191,7 +193,30 @@ app.get("/api/v1/balance", auth, async (req: any, res: any) => {
         };
         await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
         const response = await redisSubscriber.waitForMessage(requestId);
-        res.status(200).json({ balance: response.balance });
+        res.status(200).json({ 
+            // balance: response.balance,
+            assetBalance: response.assetBalance || {}
+        });
+    } catch (err) {
+        res.status(500).json({ message: "there was some issue with getting the balance" });
+    }
+});
+
+
+app.get("/api/v1/balance/usd", auth, async (req: any, res: any) => {
+    const requestId = uuidv4();
+    try {
+        // send both the payload and the type
+        const command = {
+            type: 'GET_BALANCE',
+            payload: { userId: req.user.userid, requestId }
+        };
+        await redisClient.xadd("command_stream", "*", "data", JSON.stringify(command));
+        const response = await redisSubscriber.waitForMessage(requestId);
+        res.status(200).json({ 
+            balance: response.balance
+            // assetBalance: response.assetBalance || {}
+        });
     } catch (err) {
         res.status(500).json({ message: "there was some issue with getting the balance" });
     }

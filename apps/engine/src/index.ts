@@ -19,6 +19,7 @@ const pool = new Pool({
 });
 
 let balances: Record<string, number> = {};
+let assetbalance: Record<string, Record<string, number>> = {};
 const Orders: Record<string, any> = {};
 const latest: Record<string, { asset: string; price: number; decimal: number }> = {};
 
@@ -40,6 +41,17 @@ async function subtotrades() {
       }
     }
   });
+}
+
+function udpateassetbalance(userId:string,asset:string,amount:number){
+  if (!assetbalance[userId]) {
+    assetbalance[userId] = {};
+  }
+  if (!assetbalance[userId][asset]) {
+    assetbalance[userId][asset] = 0;
+  }
+  assetbalance[userId][asset] += amount
+  console.log(assetbalance)
 }
 
 function waiterforprice(asset: string): Promise<any> {
@@ -89,6 +101,9 @@ async function processCreateOrder(payload: any) {
           ? price * (1 - 1 / leverage)
           : price * (1 + 1 / leverage),
     };
+    console.log("update the asset balance")
+    balances[userId]-= margin
+    udpateassetbalance(userId,asset,(margin*leverage)/price)
     Orders[orderId] = position;
     await writer.hset("open_orders", orderId, JSON.stringify(position));
     await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "placed", orderId }));
@@ -117,7 +132,7 @@ async function processCloseOrder(payload: any) {
 
     const closedOrder = { ...orderToClose, exitprice, pnl, closedAt: new Date().toISOString() };
     delete Orders[orderId];
-    
+    udpateassetbalance(userId,orderToClose.asset,-orderToClose.size)
     await pool.query("UPDATE users SET balance = $1 WHERE id = $2", [newbalance, userId]);
     await writer.hdel("open_orders", orderId);
 
@@ -138,7 +153,12 @@ async function processUpdateBalance(payload: any) {
 async function processGetBalance(payload: any) {
     const { requestId, userId } = payload;
     const balance = balances[userId] || 0;
-    await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, balance }));
+    const userAssetBalances = assetbalance[userId] || {};
+    await writer.xadd("callback_stream", "*", "data", JSON.stringify({ 
+        requestId, 
+        balance, 
+        assetBalance: userAssetBalances 
+    }));
 }
 
 async function engine() {
