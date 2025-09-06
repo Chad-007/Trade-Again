@@ -34,6 +34,18 @@ const pool = new Pool({
   database: "postgres",
 });
 
+
+function auth(req: any, res: any, next: any) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "no token provided" });
+  try {
+    const decoded = jwt.verify(token, "secretkey") as { userid: number };
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ message: "invalid token" });
+  }
+}
 app.post("/api/v1/signup", async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -44,7 +56,7 @@ app.post("/api/v1/signup", async (req, res) => {
     if (hey.rows.length === 0) {
       const result = await pool.query(
         "insert into users(username,password,balance)values($1,$2,$3) returning id,balance",
-        [username, hashed, 100000000]
+        [username, hashed, 100000000.00]
       );
       const userid = result.rows[0].id;
       const balance = result.rows[0].balance;
@@ -106,7 +118,7 @@ app.get("/api/v1/magic/:token", async (req, res) => {
     };
     await redis2.xadd("placebalance", "*", "data", JSON.stringify(decoded));
     // i dont think we need another validation here its just signin  right..
-    return res.status(401).json({ message: "succes" });
+    return res.status(200).json({ message: "succes" });
   } catch (err) {
     return res
       .status(401)
@@ -114,12 +126,12 @@ app.get("/api/v1/magic/:token", async (req, res) => {
   }
 });
 
-app.post("/api1/v1/trade/create", async (req: any, res: any) => {
+app.post("/api/v1/trade/create", async (req: any, res: any) => {
   const user = req.user;
   try {
     const orderData = {
       ...req.body,
-      userId: 1,
+      userId: 6,
     };
     await redis.xadd("placeorder", "*", "data", JSON.stringify(orderData));
     let responded = false;
@@ -127,7 +139,7 @@ app.post("/api1/v1/trade/create", async (req: any, res: any) => {
     redis1.once("message", (channel, message) => {
       if (!responded) {
         responded = true;
-        res.status(200).json(JSON.parse(message));
+        res.status(200).json({orderId:message});
       }
     });
     setTimeout(() => {
@@ -143,37 +155,38 @@ app.post("/api1/v1/trade/create", async (req: any, res: any) => {
   }
 });
 
-app.post("/api1/v1/trade/close", async (req: any, res: any) => {
-  try {
-    const closeData = {
-      orderId: req.body.orderId,
-      userId: 1,
-    };
-    await redis.xadd("closeorder", "*", "orderid", JSON.stringify(closeData));
-    const timeout = setTimeout(() => {
+  app.post("/api/v1/trade/close", async (req: any, res: any) => {
+    try {
+      const closeData = {
+        orderId: req.body.orderId,
+        userId: 6,
+      };
+      await redis.xadd("closeorder", "*", "orderid", JSON.stringify(closeData));
+      const timeout = setTimeout(() => {
+        if (!res.headersSent) {
+          res.status(408).json({ message: "timeout issue" });
+        }
+      }, 10000);
+      //@ts-ignore
+      redis1.once("message", (channel, message) => {
+          if (!res.headersSent) {
+            clearTimeout(timeout);
+            const parsed = JSON.parse(message);   
+            res.status(200).json({ orderId: parsed.orderId });
+          }
+        });
+    } catch (err) {
       if (!res.headersSent) {
-        res.status(408).json({ message: "timeout issue" });
+        res.status(401).json({ message: "there was some issue" });
       }
-    }, 10000);
-    //@ts-ignore
-    redis1.once("message", (channel, message) => {
-      if (!res.headersSent) {
-        clearTimeout(timeout);
-        res.status(200).json(JSON.parse(message));
-      }
-    });
-  } catch (err) {
-    if (!res.headersSent) {
-      res.status(401).json({ message: "there was some issue" });
     }
-  }
-});
+  });
 
-app.get("/api1/v1/balance/usd", async (req: any, res: any) => {
+app.get("/api/v1/balance/usd", async (req: any, res: any) => {
   try {
-    const user = req.user;
+    const id = req.body;
     const result = await pool.query("SELECT balance FROM users WHERE id = $1", [
-      user.id,
+    id,
     ]);
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "user not found" });
@@ -187,7 +200,7 @@ app.get("/api1/v1/balance/usd", async (req: any, res: any) => {
   }
 });
 
-app.get("/api1/v1/balance", async (req: any, res: any) => {
+app.get("/api/v1/balance", async (req: any, res: any) => {
   const { username } = req.body;
   try {
     const rows = await pool.query("select * from users where username = $1", [
@@ -203,7 +216,7 @@ app.get("/api1/v1/balance", async (req: any, res: any) => {
   }
 });
 
-app.get("/api1/v1/suppotedAssets", async (req: any, res: any) => {
+app.get("/api/v1/suppotedAssets", async (req: any, res: any) => {
   const assets = {
     assets: [
       {

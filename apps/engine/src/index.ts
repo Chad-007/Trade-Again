@@ -7,7 +7,7 @@ const redis = new Redis({
   port: 6380,
 });
 
-let balance:number = 100000000000;
+const balances: Record<string, number> = {};
 
 const pool = new Pool({
   host: "127.0.0.1",
@@ -100,7 +100,7 @@ async function getbalance(){
     const rawdata = field[1];
     const raw = JSON.parse(rawdata)
     console.log("id is",raw.userid,"balance is",raw.balance)
-    balance = raw.backend
+    balances[raw.userid] = parseFloat(raw.backend)
   }
 }
 
@@ -169,10 +169,10 @@ async function engine() {
                   price: market.price,
                   decimal: market.decimal,
                   })).hset("open_orders", orderid, JSON.stringify(position)).exec();
-          await redis1.publish("placed", JSON.stringify(orderid));
+          await redis1.publish("placed", orderid);
         }
         else{
-            await redis1.publish("not placed", JSON.stringify(orderid));
+            await redis1.publish("not placed", orderid);
         }
       } catch (err) {
         console.error("processing error:", err);
@@ -198,7 +198,7 @@ async function closeengine() {
         const userid = raw.userId;
         const anyorder = Orders[orderid];
         if (!anyorder) {
-          console.error("Order not found in open_orders:", orderid);
+          console.error("order not found in open_orders:", orderid);
           continue;
         }
         const currorder = (anyorder);
@@ -216,7 +216,8 @@ async function closeengine() {
         balance += pnl
         console.log("the you this much money left brotha",balance)
         await redis3.hdel("open_orders", orderid);
-        await redis1.publish("placed", JSON.stringify({ status: "closed", orderid }));
+        const orderId = orderid
+        await redis1.publish("placed", JSON.stringify({orderId}));
         await pool.query(
           `INSERT INTO closed_orders
            (id, userid, asset, side, margin, leverage, entryprice, exitprice, pnl, order_size, closed_at)
