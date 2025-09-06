@@ -30,11 +30,13 @@ async function subtotrades() {
       const parsed = JSON.parse(data);
       const updates = parsed.price_updates;
       for (const update of updates) {
+        // const newp = update.price/(10)**update.decimal
         latest[update.asset] = {
           asset: update.asset,
-          price: update.price,
-          decimal: update.decimal,
+          price:update.price,
+          decimal: update.decimal,  
         };
+        console.log(latest)
       }
     }
   });
@@ -64,11 +66,11 @@ async function restoreState() {
   }
   console.log("restored the  user balances:", Object.keys(balances).length);
 }
-
 async function processCreateOrder(payload: any) {
-  const { requestId, userId, asset, type, margin, leverage } = payload;
+  const { requestId, userId, asset, type, leverage } = payload;
+ let margin  = (payload.margin)/100
   const market = latest[asset] || (await waiterforprice(asset));
-  const price = market.price;
+  const price = market.price/(10**market.decimal);
   
   if (balances[userId] != null && balances[userId] >= margin) {
     balances[userId] -= margin;
@@ -105,7 +107,7 @@ async function processCloseOrder(payload: any) {
     }
 
     const market = latest[orderToClose.asset] || (await waiterforprice(orderToClose.asset));
-    const exitprice = market.price;
+    const exitprice = market.price / (10 ** market.decimal);
     const pnl = orderToClose.side === "long"
         ? (exitprice - orderToClose.entryprice) * orderToClose.size
         : (orderToClose.entryprice - exitprice) * orderToClose.size;
