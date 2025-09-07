@@ -135,13 +135,13 @@ async function processCloseOrder(payload: any) {
     const closedOrder = { ...orderToClose, exitprice, pnl, closedAt: new Date().toISOString() };
     delete Orders[orderId];
     udpateassetbalance(userId,orderToClose.asset,-orderToClose.size)
-    await pool.query("UPDATE users SET balance = $1 WHERE id = $2", [newbalance, userId]);
+    // await pool.query("UPDATE users SET balance = $1 WHERE id = $2", [newbalance, userId]);
     await writer.hdel("open_orders", orderId);
 
-    await pool.query(
-        `INSERT INTO closed_orders (id, userid, asset, side, margin, leverage, entryprice, exitprice, pnl, order_size, closed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [orderId, userId, closedOrder.asset, closedOrder.side, closedOrder.margin, closedOrder.leverage, closedOrder.entryprice, closedOrder.exitprice, pnl, closedOrder.size, closedOrder.closedAt]
-    );
+    // await pool.query(
+    //     `INSERT INTO closed_orders (id, userid, asset, side, margin, leverage, entryprice, exitprice, pnl, order_size, closed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    //     [orderId, userId, closedOrder.asset, closedOrder.side, closedOrder.margin, closedOrder.leverage, closedOrder.entryprice, closedOrder.exitprice, pnl, closedOrder.size, closedOrder.closedAt]
+    // );
     
     await writer.xadd("callback_stream", "*", "data", JSON.stringify({ requestId, status: "closed", pnl }));
 }
