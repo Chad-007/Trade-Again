@@ -66,12 +66,14 @@ function waiterforprice(asset: string): Promise<any> {
 }
 
 async function restoreState() {
+  // restore all the snapshotted orders from the cache
   const allorders = await writer.hgetall("open_orders");
   for (const [id, data] of Object.entries(allorders)) {
     Orders[id] = JSON.parse(data as string);
   }
   console.log("restored the  open orders:", Object.keys(Orders).length);
 
+  //  to get the user balances maybe couldve made it also in the cache
   const userbalances = await pool.query("SELECT id, balance FROM users");
   for (const user of userbalances.rows) {
       balances[user.id] = parseFloat(user.balance);
