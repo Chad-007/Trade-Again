@@ -74,9 +74,9 @@ async function restoreState() {
   console.log("restored the  open orders:", Object.keys(Orders).length);
 
   //  to get the user balances maybe couldve made it also in the cache
-  const userbalances = await pool.query("SELECT id, balance FROM users");
-  for (const user of userbalances.rows) {
-      balances[user.id] = parseFloat(user.balance);
+  const userbalances =await writer.hgetall("balances");
+  for (const [userid,balance] of Object.entries(userbalances)) {
+      balances[userid] = parseFloat(balance as string);
   }
   console.log("restored the  user balances:", Object.keys(balances).length);
 }
@@ -149,6 +149,7 @@ async function processCloseOrder(payload: any) {
 async function processUpdateBalance(payload: any) {
     const { userid, balance } = payload;
     balances[userid] = parseFloat(balance);
+    await writer.hset("balances", userid, balances[userid])
     console.log(`updated the balance for user ${userid}: ${balance}`);
 }
 
