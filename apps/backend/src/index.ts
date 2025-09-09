@@ -8,6 +8,7 @@ const { Pool } = require("pg");
 
 
 
+// new logic
 //callback logic for easier error return
 class RedisSubscriber {
     //@ts-ignore
