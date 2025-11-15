@@ -36,7 +36,7 @@ export class OrderProcessor {
       console.log(`order ${orderId} best quote: ${bestQuote.dex} - price: ${bestQuote.price.toFixed(4)}, amount out: ${bestQuote.amountOut.toFixed(4)}`);
       await this.db.updateOrderStatus(orderId, 'routing', { dex: bestQuote.dex });
       await this.updateStatus(orderId, 'building');
-      await this.sleep(500);
+      await this.sleep(20000);
       await this.updateStatus(orderId, 'submitted');
       const swapResult = await this.executeWithRetry(
         orderId,

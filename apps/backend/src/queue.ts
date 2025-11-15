@@ -1,7 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import type { QueueOptions } from 'bullmq';
 import type { Redis as RedisType } from 'ioredis';
-import Redis from 'ioredis';
 import type { OrderJobData } from './order-processor.js';
 import { OrderProcessor } from './order-processor.js';
 import { Database } from './database.js';
