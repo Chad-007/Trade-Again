@@ -1,0 +1,141 @@
+{
+  "info": {
+    "name": "Order Execution Engine API",
+    "description": "API collection for the Order Execution Engine with DEX routing and WebSocket status updates",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Execute Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-user-id",
+            "value": "1",
+            "description": "User ID (optional, defaults to 1)"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"market\",\n  \"tokenIn\": \"SOL\",\n  \"tokenOut\": \"USDC\",\n  \"amountIn\": 1.5\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/orders/execute",
+          "host": ["{{base_url}}"],
+          "path": ["api", "orders", "execute"]
+        },
+        "description": "Submit a market order for execution. Returns orderId. Connect to WebSocket at /api/orders/{orderId}/status for live updates."
+      },
+      "response": []
+    },
+    {
+      "name": "Get Order",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/orders/:orderId",
+          "host": ["{{base_url}}"],
+          "path": ["api", "orders", ":orderId"],
+          "variable": [
+            {
+              "key": "orderId",
+              "value": "",
+              "description": "Order ID from execute order response"
+            }
+          ]
+        },
+        "description": "Get order details by orderId"
+      }
+    },
+    {
+      "name": "Get User Orders",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-user-id",
+            "value": "1"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders?userId=1&limit=50",
+          "host": ["{{base_url}}"],
+          "path": ["api", "orders"],
+          "query": [
+            {
+              "key": "userId",
+              "value": "1",
+              "description": "User ID"
+            },
+            {
+              "key": "limit",
+              "value": "50",
+              "description": "Maximum number of orders to return"
+            }
+          ]
+        },
+        "description": "Get all orders for a user"
+      }
+    },
+    {
+      "name": "Queue Stats",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/queue/stats",
+          "host": ["{{base_url}}"],
+          "path": ["api", "queue", "stats"]
+        },
+        "description": "Get queue statistics (waiting, active, completed, failed orders)"
+      }
+    },
+    {
+      "name": "WebSocket - Order Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "ws://{{base_url}}/api/orders/:orderId/status",
+          "protocol": "ws",
+          "host": ["{{base_url}}"],
+          "path": ["api", "orders", ":orderId", "status"],
+          "variable": [
+            {
+              "key": "orderId",
+              "value": "",
+              "description": "Order ID from execute order response"
+            }
+          ]
+        },
+        "description": "WebSocket connection for real-time order status updates. Connect after submitting an order.\n\nStatus flow: pending → routing → building → submitted → confirmed/failed\n\nExample message:\n{\n  \"orderId\": \"uuid\",\n  \"status\": \"routing\",\n  \"timestamp\": \"2024-01-01T00:00:00.000Z\"\n}"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "localhost:3000",
+      "type": "string"
+    }
+  ]
+}
+
