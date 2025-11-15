@@ -1,10 +1,15 @@
+### 1. Health Check
+```bash
+curl http://localhost:3000/health
+```
+**Expected:** `{"status":"healthy","timestamp":"..."}`
 
 ### 2. Order Submission
 ```bash
 curl -X POST http://localhost:3000/api/orders/execute \
   -H "Content-Type: application/json" \
   -H "x-user-id: 1" \
-  -d '{"type":"market","tokenIn":"SOL","tokenOut":"USDC","amountIn":1.5}'
+  -d '{"type":"market","tokenIn":"SOL","tokenOut":"USDC","amountIn":1.5,"userId":1}'
 ```
 **Expected:** Returns `orderId` and `status: "pending"`
 

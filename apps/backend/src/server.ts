@@ -43,7 +43,7 @@ export class OrderExecutionServer {
       '/api/orders/execute',
       async (request: any, reply: any) => {
         try {
-          const { type, tokenIn, tokenOut, amountIn, limitPrice } = request.body;
+          const { type, tokenIn, tokenOut, amountIn, userId } = request.body;
           if (!type || !tokenIn || !tokenOut || !amountIn) {
             return reply.status(400).send({
               error: 'missing some of the fields'
@@ -59,8 +59,6 @@ export class OrderExecutionServer {
               error: 'amount should be greater than 0'
             });
           }
-
-          const userId = request.body.userId || 1;
           const orderId = uuidv4();
           const order: Order = {
             orderId,
@@ -189,7 +187,7 @@ export class OrderExecutionServer {
               console.log(`order ${orderId} placed via WebSocket for user ${userId}`);
             }
           } catch (err) {
-            console.error('Error processing WebSocket message:', err);
+            console.error(' handling WebSocket message:', err);
           }
         });
         //@ts-ignore
