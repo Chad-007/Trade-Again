@@ -3,7 +3,6 @@ import websocket from '@fastify/websocket';
 import { v4 as uuidv4 } from 'uuid';
 import { Database } from './database.js';
 import { OrderQueue } from './queue.js';
-import { WebSocketManager, registerWebSocket } from './websocket.js';
 import type { Order, OrderType } from './types.js';
 import type { Redis as RedisType } from 'ioredis';
 import Redis from 'ioredis';
@@ -12,7 +11,6 @@ export class OrderExecutionServer {
   private fastify: ReturnType<typeof Fastify>;
   private db: Database;
   private queue: OrderQueue;
-  private wsManager: WebSocketManager;
   private redis: RedisType;
   // initialize all the endpoints
   constructor() {
@@ -24,13 +22,11 @@ export class OrderExecutionServer {
     });
     this.db = new Database();
     this.queue = new OrderQueue(this.db, this.redis);
-    this.wsManager = new WebSocketManager(this.redis);
   }
   async start(): Promise<void> {
     await this.fastify.register(websocket);
     await this.db.initialize();
     this.registerRoutes();
-    registerWebSocket(this.fastify, this.wsManager);
     try {
       await this.fastify.listen({ port: PORT, host: '0.0.0.0' });
       console.log(`engine is running on the port ${PORT}`);
@@ -154,7 +150,6 @@ export class OrderExecutionServer {
   async stop(): Promise<void> {
     await this.fastify.close();
     await this.queue.close();
-    await this.wsManager.close();
     await this.db.close();
     await this.redis.quit();
   }
