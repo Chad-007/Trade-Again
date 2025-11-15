@@ -17,16 +17,6 @@ export class OrderQueue {
       connection: {
         host: process.env.REDIS_HOST || '127.0.0.1',
         port: parseInt(process.env.REDIS_PORT || '6379'),
-      },
-      defaultJobOptions: {
-        attempts: 1, // retries handled in processor
-        removeOnComplete: {
-          age: 3600, // keep completed jobs for 1 hour
-          count: 1000
-        },
-        removeOnFail: {
-          age: 86400 // keep failed jobs for 24 hours
-        }
       }
     };
     this.queue = new Queue<OrderJobData>('order-execution', queueOptions);
@@ -39,10 +29,10 @@ export class OrderQueue {
       },
       {
         ...queueOptions,
-        concurrency: 10, // max 10 concurrent orders
+        concurrency: 10, 
         limiter: {
-          max: 100, // max 100 jobs
-          duration: 60000 // per 60 seconds (100 orders/minute)
+          max: 100, 
+          duration: 60000 
         }
       }
     );

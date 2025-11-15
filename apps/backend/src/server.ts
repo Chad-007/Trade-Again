@@ -7,9 +7,7 @@ import type { Order, OrderType } from './types.js';
 import type { Redis as RedisType } from 'ioredis';
 import Redis from 'ioredis';
 import type { WebSocket } from 'ws';
-
 const PORT = 3000;
-
 export class OrderExecutionServer {
   private fastify: ReturnType<typeof Fastify>;
   private db: Database;
@@ -152,7 +150,7 @@ export class OrderExecutionServer {
         }
         this.connections.get(userIdNum)!.push(connection.socket);
 
-        console.log(`WebSocket connection established for user ${userId}`);
+        console.log(`websocket connection established for user ${userId}`);
 
         connection.socket.on('message', async (message: Buffer) => {
           try {
@@ -188,10 +186,10 @@ export class OrderExecutionServer {
                 status: 'pending'
               }));
 
-              console.log(`Order ${orderId} placed via WebSocket for user ${userId}`);
+              console.log(`order ${orderId} placed via WebSocket for user ${userId}`);
             }
           } catch (err) {
-            console.error('Error handling WebSocket message:', err);
+            console.error('Error processing WebSocket message:', err);
           }
         });
         //@ts-ignore

@@ -1,8 +1,3 @@
-### 1. Health Check
-```bash
-curl http://localhost:3000/health
-```
-**Expected:** `{"status":"healthy","timestamp":"..."}`
 
 ### 2. Order Submission
 ```bash
