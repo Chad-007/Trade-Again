@@ -64,21 +64,6 @@ npm run build
 npm run dev
 ```
 
-### Environment Variables
-
-Create a `.env` file (optional, defaults shown):
-
-```env
-PORT=3000
-DB_HOST=127.0.0.1
-DB_PORT=5433
-DB_USER=postgres
-DB_PASSWORD=alan
-DB_NAME=postgres
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
-```
-
 ### Database Setup
 
 The database schema is automatically created on server startup. Ensure PostgreSQL is running and accessible.
