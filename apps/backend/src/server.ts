@@ -14,14 +14,12 @@ export class OrderExecutionServer {
   private queue: OrderQueue;
   private redis: RedisType;
   private connections = new Map<number, WebSocket[]>();
+  REDIS_URL="rediss://default:AZQXAAIncDJkZjBhZjExM2E3OTA0MjcxYTYyOTFiNDMwOWZkYWRjNHAyMzc5MTE@sharp-mosquito-37911.upstash.io:6379"
 
   constructor() {
     this.fastify = Fastify({ logger: true });
     //@ts-ignore
-    this.redis = new (Redis)({
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    });
+    this.redis = new Redis(this.REDIS_URL);
     this.db = new Database();
     this.queue = new OrderQueue(this.db, this.redis);
   }

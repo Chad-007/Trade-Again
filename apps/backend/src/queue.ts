@@ -1,6 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import type { QueueOptions } from 'bullmq';
-import type { Redis as RedisType } from 'ioredis';
+import   Redis   from 'ioredis';
 import type { OrderJobData } from './order-processor.js';
 import { OrderProcessor } from './order-processor.js';
 import { Database } from './database.js';
@@ -8,17 +8,18 @@ export class OrderQueue {
   private queue: Queue<OrderJobData>;
   private worker: Worker<OrderJobData>;
   private processor: OrderProcessor;
+  //@ts-ignore
   private redis: RedisType;
-
+  REDIS_URL="rediss://default:AZQXAAIncDJkZjBhZjExM2E3OTA0MjcxYTYyOTFiNDMwOWZkYWRjNHAyMzc5MTE@sharp-mosquito-37911.upstash.io:6379"
+  //@ts-ignore
   constructor(db: Database, redis: RedisType) {
-    this.redis = redis;
+    //@ts-ignore
+    this.redis = new Redis(this.REDIS_URL);
     this.processor = new OrderProcessor(db, redis);
-    const queueOptions: QueueOptions = {
-      connection: {
-        host: process.env.REDIS_HOST || '127.0.0.1',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
-      }
+     const queueOptions: QueueOptions = {
+      connection: this.redis
     };
+
     this.queue = new Queue<OrderJobData>('order-execution', queueOptions);
 
     // worker with concurrency limit (10 concurrent orders)
