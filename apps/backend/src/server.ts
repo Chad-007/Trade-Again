@@ -254,12 +254,6 @@ export class OrderExecutionServer {
         }));
       }
     );
-
-    this.fastify.get('/health', async (request: any, reply: any) => {
-      return reply.status(200).send({
-        status: 'healthy',
-      });
-    });
   }
 
   async stop(): Promise<void> {

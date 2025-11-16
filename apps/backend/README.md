@@ -136,8 +136,7 @@ Get queue statistics.
 }
 ```
 
-### WebSocket: ws://host/api/orders/:orderId/status
-
+### WebSocket: ws:/api/ws/:userId
 Connect to WebSocket after submitting an order to receive real-time status updates.
 
 **Status Flow:**
