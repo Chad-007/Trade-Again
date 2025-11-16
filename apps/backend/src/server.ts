@@ -13,7 +13,7 @@ export class OrderExecutionServer {
   private db: Database;
   private queue: OrderQueue;
   private redis: RedisType;
-  private connections = new Map<number, WebSocket[]>();
+  private connections = new Map<string, WebSocket[]>();
   REDIS_URL="rediss://default:AZQXAAIncDJkZjBhZjExM2E3OTA0MjcxYTYyOTFiNDMwOWZkYWRjNHAyMzc5MTE@sharp-mosquito-37911.upstash.io:6379"
 
   constructor() {
@@ -85,7 +85,7 @@ export class OrderExecutionServer {
             orderId,
             status: 'pending',
             message: `order ${orderId} queued for execution`,
-            websocketUrl: `/api/ws/${userId}`
+            websocketUrl: `/api/ws/${orderId}`
           });
         } catch (error) {
             console.log(error);
@@ -135,19 +135,19 @@ export class OrderExecutionServer {
     });
 
     this.fastify.get(
-      '/api/ws/:userId',
+      '/api/ws/:orderId',
       { websocket: true },
       //@ts-ignore
       (connection, request: any) => {
-        const { userId } = request.params;
-        const userIdNum = parseInt(userId);
+        const { orderId } = request.params;
+       
 
-        if (!this.connections.has(userIdNum)) {
-          this.connections.set(userIdNum, []);
-        }
-        this.connections.get(userIdNum)!.push(connection.socket);
+        if (!this.connections.has(orderId)) {
+  this.connections.set(orderId, []);
+}
+        this.connections.get(orderId)!.push(connection.socket);
 
-        console.log(`websocket connection established for user ${userId}`);
+        console.log(`websocket connection established for user ${orderId}`);
 
         connection.socket.on('message', async (message: Buffer) => {
           try {
@@ -157,7 +157,7 @@ export class OrderExecutionServer {
               const orderId = uuidv4();
               const order: Order = {
                 orderId,
-                userId: userIdNum,
+                userId: msg.userId,
                 type: msg.data.type as OrderType,
                 tokenIn: msg.data.tokenIn,
                 tokenOut: msg.data.tokenOut,
@@ -170,7 +170,7 @@ export class OrderExecutionServer {
               await this.db.createOrder(order);
               await this.queue.addOrder({
                 orderId,
-                userId: userIdNum,
+                userId: msg.userId,
                 type: msg.data.type,
                 tokenIn: msg.data.tokenIn,
                 tokenOut: msg.data.tokenOut,
@@ -183,60 +183,55 @@ export class OrderExecutionServer {
                 status: 'pending'
               }));
 
-              console.log(`order ${orderId} placed via WebSocket for user ${userId}`);
+              console.log(`order ${orderId} placed via WebSocket for user ${orderId}`);
             }
           } catch (err) {
             console.error(' handling WebSocket message:', err);
           }
         });
         //@ts-ignore
-        const subscriber = new Redis({
-          host: process.env.REDIS_HOST || '127.0.0.1',
-          port: parseInt(process.env.REDIS_PORT || '6379'),
-        });
+       const subscriber = new Redis(this.REDIS_URL);
         //@ts-ignore
         subscriber.psubscribe(`order:*:status`, (err, count) => {
           if (err) {
-            console.error(`Failed to subscribe to user ${userId} orders:`, err);
+            console.error(`Failed to subscribe to  ${orderId} orders:`, err);
             return;
           }
-          console.log(`Subscribed to all orders for user ${userId}`);
+          console.log(`Subscribed to all the order  ${orderId}`);
         });
         //@ts-ignore
         subscriber.on('pmessage', async (pattern, channel, message) => {
-          try {
-            const update = JSON.parse(message);
-            
-            const orderId = channel.split(':')[1];
-            
-            const order = await this.db.getOrder(orderId);
-            if (order && order.userId === userIdNum) {
-              const userConnections = this.connections.get(userIdNum) || [];
-              userConnections.forEach(socket => {
-                //@ts-ignore
-                if (socket.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify({
-                    type: 'order_update',
-                    ...update
-                  }));
-                }
-              });
-            }
-          } catch (err) {
-            console.error('Error processing Redis message:', err);
-          }
-        });
+  try {
+    const update = JSON.parse(message);
+    const orderId = channel.split(':')[1];
+
+    const userConnections = this.connections.get(orderId) || [];
+
+    for (const socket of userConnections) {
+      //@ts-ignore
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'order_update',
+          ...update
+        }));
+      }
+    }
+  } catch (err) {
+    console.error('Error processing Redis message:', err);
+  }
+});
+
 
         connection.socket.on('close', () => {
-          console.log(`WebSocket disconnected for user ${userId}`);
+          console.log(`WebSocket disconnected for order ${orderId}`);
           
-          const userConnections = this.connections.get(userIdNum) || [];
+          const userConnections = this.connections.get(orderId) || [];
           const index = userConnections.indexOf(connection.socket);
           if (index > -1) {
             userConnections.splice(index, 1);
           }
           if (userConnections.length === 0) {
-            this.connections.delete(userIdNum);
+            this.connections.delete(orderId);
           }
           
           subscriber.punsubscribe();
@@ -245,12 +240,12 @@ export class OrderExecutionServer {
 
         //@ts-ignore
         connection.socket.on('error', (error) => {
-          console.error(`WebSocket error for user ${userId}:`, error);
+          console.error(`WebSocket error for order ${orderId}:`, error);
         });
 
         connection.socket.send(JSON.stringify({
           type: 'connected',
-          userId: userIdNum,
+          orderId: orderId,
           message: 'Connected to trading WebSocket'
         }));
       }

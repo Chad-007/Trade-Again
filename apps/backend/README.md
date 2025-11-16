@@ -35,6 +35,10 @@ This order execution engine processes market orders with intelligent DEX routing
 7. Confirmed (status: "confirmed") or Failed (status: "failed")
 ```
 
+
+
+ADDED SLEEP(1000) TO PROPERLY SEE ALL THE STATUS OF THE ORDERS VIA THE WEBSOCKET
+
 ### Components
 
 - **MockDexRouter** - Simulates Raydium and Meteora DEX interactions with realistic delays and price variations

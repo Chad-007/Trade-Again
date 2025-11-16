@@ -30,13 +30,14 @@ export class OrderProcessor {
     const { orderId, userId, type, tokenIn, tokenOut, amountIn } = job.data;
 
     try {
+      //await this.sleep(5000)
       await this.updateStatus(orderId, 'routing');
       const bestQuote = await this.dexRouter.getBestQuote(tokenIn, tokenOut, amountIn);
       
       console.log(`order ${orderId} best quote: ${bestQuote.dex} - price: ${bestQuote.price.toFixed(4)}, amount out: ${bestQuote.amountOut.toFixed(4)}`);
       await this.db.updateOrderStatus(orderId, 'routing', { dex: bestQuote.dex });
       await this.updateStatus(orderId, 'building');
-      await this.sleep(20000);
+      //await this.sleep(20000);
       await this.updateStatus(orderId, 'submitted');
       const swapResult = await this.executeWithRetry(
         orderId,
@@ -98,6 +99,7 @@ export class OrderProcessor {
       timestamp: new Date(),
       ...(error && { error })
     };
+    await this.sleep(10000)
     await this.redis.publish(
       `order:${orderId}:status`,
       JSON.stringify(update)
