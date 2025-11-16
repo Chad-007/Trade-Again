@@ -6,13 +6,15 @@ export class Database {
   private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({
-      host: process.env.DB_HOST || '127.0.0.1',
-      port: parseInt(process.env.DB_PORT || '5433'),
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'alan',
-      database: process.env.DB_NAME || 'postgres',
-    });
+  this.pool = new Pool({
+  host: "dpg-d4clhu2dbo4c73db60ng-a.oregon-postgres.render.com",
+  port: 5432,
+  user: "new_lgkz_user",
+  password: "Kr9jSMYhAuIo6UG742BdU5aVxC5Ikigp",
+  database: "new_lgkz",
+  ssl: { rejectUnauthorized: false }
+});
+
   }
   async initialize(): Promise<void> {
     // create the orders table

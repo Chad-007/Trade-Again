@@ -21,6 +21,7 @@ export class OrderExecutionServer {
     //@ts-ignore
     this.redis = new Redis(this.REDIS_URL);
     this.db = new Database();
+    //@ts-ignore
     this.queue = new OrderQueue(this.db, this.redis);
   }
 
