@@ -30,7 +30,7 @@ export class OrderProcessor {
     const { orderId, userId, type, tokenIn, tokenOut, amountIn } = job.data;
 
     try {
-      //await this.sleep(5000)
+      await this.sleep(5000)
       await this.updateStatus(orderId, 'routing');
       const bestQuote = await this.dexRouter.getBestQuote(tokenIn, tokenOut, amountIn);
       
@@ -99,6 +99,7 @@ export class OrderProcessor {
       timestamp: new Date(),
       ...(error && { error })
     };
+    // added 10s  delay
     await this.sleep(10000)
     await this.redis.publish(
       `order:${orderId}:status`,

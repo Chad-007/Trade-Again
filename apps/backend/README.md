@@ -36,8 +36,9 @@ This order execution engine processes market orders with intelligent DEX routing
 ```
 
 
-
-ADDED SLEEP(1000) TO PROPERLY SEE ALL THE STATUS OF THE ORDERS VIA THE WEBSOCKET
+IMP:
+ADDED 10 seconds delay TO PROPERLY SEE ALL THE STATUS OF THE ORDERS VIA THE WEBSOCKET
+remove the sleep in worker publish to see the proper execution
 
 ### Components
 

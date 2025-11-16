@@ -8,18 +8,27 @@ curl -X POST http://localhost:3000/api/orders/execute \
 **Expected:** Returns `orderId` and `status: "pending"`
 
 
+
 **Expected:** See status updates: `pending → routing → building → submitted → confirmed`
 
 ### . Multiple Orders Simultaneously
-```bash
-# Submit 3 orders at once
-for i in {1..3}; do
-  curl -X POST http://localhost:3000/api/orders/execute \
-    -H "Content-Type: application/json" \
-    -H "x-user-id: 1" \
-    -d "{\"type\":\"market\",\"tokenIn\":\"SOL\",\"tokenOut\":\"USDC\",\"amountIn\":$((i+1))}"
-done
-```
+for i in (seq 5)
+    set amount (math $i + 1)
+
+    curl -X POST http://localhost:3000/api/orders/execute \
+        -H "Content-Type: application/json" \
+        -H "x-user-id: 1" \
+        -d "{\"type\":\"market\",\"tokenIn\":\"SOL\",\"tokenOut\":\"USDC\",\"amountIn\":$amount, \"userId\":1}" &
+end
+
+wait
+
+
+live link:https://trade-again.onrender.com
+
+
+replace localhost with the live link
+
 **Expected:** All orders queued and processed
 
 ### . Queue Statistics
